@@ -1100,6 +1100,8 @@
       loadingMovies: false,
       activePlayback: null,
       lastProgressWrite: 0,
+      pendingEpisodeAdvance: false,
+      episodeAdvanceInFlight: false,
       episodeMetaLoading: new Set(),
       episodeMetaQueueRunning: false,
       movieMetaLoading: new Set(),
@@ -2413,12 +2415,171 @@
     function launchPlayer(media, url, subtitle, playbackState) {
       state.activePlayback = { media, ...playbackState };
       state.lastProgressWrite = 0;
+      state.pendingEpisodeAdvance = false;
+      state.episodeAdvanceInFlight = false;
       playerTitle.textContent = getMediaName(media);
       playerSubtitle.textContent = subtitle;
+
+      if (playbackState?.mediaType === "tv") {
+        document.title = `${getMediaName(media)} · S${playbackState.season}E${playbackState.episode} | ShowHub`;
+      } else {
+        document.title = `${getMediaName(media)} | ShowHub`;
+      }
+
       playerFrame.src = url;
       playerScreen.classList.add("open");
       playerScreen.setAttribute("aria-hidden", "false");
       document.body.style.overflow = "hidden";
+    }
+
+    function getEpisodeFromPlayerMessage(message) {
+      const candidates = [
+        message?.data,
+        message?.data?.media,
+        message?.data?.metadata,
+        message?.media,
+        message?.metadata,
+        message
+      ];
+
+      for (const candidate of candidates) {
+        if (!candidate || typeof candidate !== "object") continue;
+
+        const season = Number(
+          candidate.season ?? candidate.seasonNumber ?? candidate.season_number
+        );
+        const episode = Number(
+          candidate.episode ?? candidate.episodeNumber ?? candidate.episode_number
+        );
+
+        if (Number.isInteger(season) && season > 0 &&
+            Number.isInteger(episode) && episode > 0) {
+          return { season, episode };
+        }
+      }
+
+      return null;
+    }
+
+    function syncActiveTvEpisode(season, episode) {
+      const active = state.activePlayback;
+      if (!active || active.mediaType !== "tv") return false;
+
+      season = Number(season);
+      episode = Number(episode);
+      if (!Number.isInteger(season) || !Number.isInteger(episode)) return false;
+
+      const changed =
+        Number(active.season) !== season ||
+        Number(active.episode) !== episode;
+
+      if (!changed) return false;
+
+      active.season = season;
+      active.episode = episode;
+      state.lastProgressWrite = 0;
+      state.pendingEpisodeAdvance = false;
+
+      const episodeData = state.currentEpisodes.find(item =>
+        Number(item.season) === season && Number(item.number) === episode
+      );
+      const episodeName = episodeData?.name || "";
+
+      playerTitle.textContent = getMediaName(active.media);
+      playerSubtitle.textContent =
+        `Season ${season} · Episode ${episode}` +
+        (episodeName ? ` · ${episodeName}` : "");
+      document.title = `${getMediaName(active.media)} · S${season}E${episode} | ShowHub`;
+
+      const entry = makeWatchEntry(active.media, {
+        mediaType: "tv",
+        season,
+        episode
+      }, null);
+      entry.currentTime = 0;
+      entry.duration = 0;
+      entry.lastWatched = Date.now();
+      saveWatchEntry(entry);
+
+      const imdbId = getImdbId(active.media);
+      if (imdbId && location.hash.startsWith("#watch=")) {
+        history.replaceState(
+          {
+            player: true,
+            mediaType: "tv",
+            title: getMediaName(active.media),
+            season,
+            episode
+          },
+          "",
+          `#watch=${encodeURIComponent(imdbId)}-s${season}e${episode}`
+        );
+      }
+
+      return true;
+    }
+
+    async function getNextEpisodeForActivePlayback() {
+      const active = state.activePlayback;
+      if (!active || active.mediaType !== "tv") return null;
+
+      let episodes = [];
+      const showId = Number(active.media?.id || 0);
+
+      if (state.currentEpisodes.length &&
+          (!state.currentShow?.id || Number(state.currentShow.id) === showId)) {
+        episodes = state.currentEpisodes;
+      }
+
+      if (!episodes.length && showId) {
+        try {
+          const fetched = await fetchJson(`${TVMAZE_API}/shows/${showId}/episodes`);
+          episodes = fetched.filter(item =>
+            Number.isInteger(item.season) && Number.isInteger(item.number)
+          );
+
+          // Keep the episode names available for the player heading and history card.
+          state.currentShow = active.media;
+          state.currentEpisodes = episodes;
+        } catch (error) {
+          console.warn("Could not load the next episode from TVMaze.", error);
+        }
+      }
+
+      if (episodes.length) {
+        const ordered = [...episodes].sort((a, b) =>
+          a.season - b.season || a.number - b.number
+        );
+        const currentIndex = ordered.findIndex(item =>
+          Number(item.season) === Number(active.season) &&
+          Number(item.number) === Number(active.episode)
+        );
+
+        if (currentIndex >= 0 && currentIndex + 1 < ordered.length) {
+          const next = ordered[currentIndex + 1];
+          return { season: Number(next.season), episode: Number(next.number) };
+        }
+      }
+
+      // Fallback if TVMaze is temporarily unavailable. This still handles the
+      // common case of moving to the next episode within the same season.
+      return { season: Number(active.season), episode: Number(active.episode) + 1 };
+    }
+
+    async function syncToNextEpisodeAfterPlayerAdvance(currentTime, duration, eventName) {
+      if (state.episodeAdvanceInFlight) return;
+      state.episodeAdvanceInFlight = true;
+
+      try {
+        const next = await getNextEpisodeForActivePlayback();
+        if (!next || !state.activePlayback) return;
+
+        syncActiveTvEpisode(next.season, next.episode);
+        updatePlaybackProgress(currentTime, duration, eventName);
+      } finally {
+        state.pendingEpisodeAdvance = false;
+        state.episodeAdvanceInFlight = false;
+      }
     }
 
     function openEpisode(show, season, episode, options = {}) {
@@ -2491,7 +2652,10 @@
       playerScreen.setAttribute("aria-hidden", "true");
       playerFrame.src = "";
       state.activePlayback = null;
+      state.pendingEpisodeAdvance = false;
+      state.episodeAdvanceInFlight = false;
       document.body.style.overflow = "";
+      document.title = "ShowHub";
 
       if (useHistory && location.hash.startsWith("#watch=")) history.back();
     }
@@ -2666,15 +2830,51 @@
           return;
         }
       }
-      if (message?.type !== "PLAYER_EVENT") return;
 
-      const data = message.data || {};
+      if (!message || typeof message !== "object") return;
+
+      // VidFast may include the current season/episode in PLAYER_EVENT or
+      // MEDIA_DATA messages. If it does, treat that as the source of truth.
+      const playerEpisode = getEpisodeFromPlayerMessage(message);
+      if (playerEpisode && state.activePlayback?.mediaType === "tv") {
+        syncActiveTvEpisode(playerEpisode.season, playerEpisode.episode);
+      }
+
+      if (message.type !== "PLAYER_EVENT" && message.type !== "MEDIA_DATA") return;
+
+      const data = message.data || message;
       const eventName = data.event || "";
-      if (
-        Number.isFinite(Number(data.currentTime)) ||
-        Number.isFinite(Number(data.duration))
-      ) {
-        updatePlaybackProgress(Number(data.currentTime), Number(data.duration), eventName);
+      const currentTime = Number(data.currentTime);
+      const duration = Number(data.duration);
+      const hasPlaybackTime =
+        Number.isFinite(currentTime) || Number.isFinite(duration);
+
+      if (message.type === "PLAYER_EVENT" && eventName === "ended" &&
+          state.activePlayback?.mediaType === "tv") {
+        // Save the completed episode first, then wait for VidFast to start the
+        // next one. The next play/timeupdate event will move the outer app too.
+        if (hasPlaybackTime) {
+          updatePlaybackProgress(currentTime, duration, eventName);
+        }
+        state.pendingEpisodeAdvance = true;
+        return;
+      }
+
+      const looksLikeFreshEpisodePlayback =
+        state.pendingEpisodeAdvance &&
+        state.activePlayback?.mediaType === "tv" &&
+        ["play", "timeupdate", "playerstatus"].includes(eventName) &&
+        Number.isFinite(currentTime) && currentTime >= 0 && currentTime < 60;
+
+      if (looksLikeFreshEpisodePlayback) {
+        // If VidFast did not include season/episode metadata, infer the next
+        // episode from TVMaze only after the new video actually begins.
+        syncToNextEpisodeAfterPlayerAdvance(currentTime, duration, eventName);
+        return;
+      }
+
+      if (hasPlaybackTime) {
+        updatePlaybackProgress(currentTime, duration, eventName);
       }
     });
 

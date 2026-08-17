@@ -737,7 +737,7 @@
     }
 
     .catalogue-actions {
-      display: flex;
+      display: none;
       justify-content: center;
       padding: 0 0 70px;
     }
@@ -1093,6 +1093,8 @@
       movieMetaQueueRunning: false,
       metadataPreloadRunning: false,
       metadataPreloadScheduled: false,
+      initialCatalogueLoading: true,
+      initialCatalogueLoaded: false,
       filters: {
         type: "all",
         genre: "all",
@@ -1935,13 +1937,23 @@
       searchInput.placeholder = "Search movies and TV shows...";
 
       const searching = Boolean(state.searchTerm);
+      const hasLoadedTitles = getAllLoadedItems().length > 0;
+      const canLoadMore = state.tvHasMore || state.movieHasMore;
+
+      // Never show "Load more" as the initial state of the page. The first
+      // batch is fetched automatically; this control only appears afterwards.
       catalogueActions.style.display =
-        !searching && (state.tvHasMore || state.movieHasMore)
+        state.initialCatalogueLoaded &&
+        !state.initialCatalogueLoading &&
+        !searching &&
+        hasLoadedTitles &&
+        canLoadMore
           ? "flex"
           : "none";
 
       loadMoreButton.textContent = "Load more titles";
-      loadMoreButton.disabled = state.loadingTV || state.loadingMovies;
+      loadMoreButton.disabled =
+        state.initialCatalogueLoading || state.loadingTV || state.loadingMovies;
     }
 
     function updateFilterAvailability() {
@@ -2318,14 +2330,24 @@
     }
 
     async function loadInitialCatalogue() {
+      state.initialCatalogueLoading = true;
+      state.initialCatalogueLoaded = false;
+      catalogueActions.style.display = "none";
       renderStatus("Loading movies and TV shows…", true);
 
-      await Promise.all([
+      // Start both sources immediately. Promise.allSettled means one catalogue
+      // can still populate the page if the other API is temporarily unavailable.
+      await Promise.allSettled([
         loadHomeBatch({ render: false }),
         loadMovieBatch({ render: false })
       ]);
 
+      state.initialCatalogueLoading = false;
+      state.initialCatalogueLoaded = true;
+
+      // Render the automatically-loaded first batch before exposing Load more.
       renderFilteredCatalogue();
+      renderContinueWatching();
       scheduleBackgroundMetadataPreload();
     }
 
@@ -2906,12 +2928,29 @@
         return;
       }
       if (modalWrap.classList.contains("open")) closeModal();
-    });f
+    });
 
-    migrateWatchHistory();
-    renderContinueWatching();
-    updateCatalogueControls();
-    loadInitialCatalogue();
+    async function initialiseShowHub() {
+      migrateWatchHistory();
+
+      // Watch history is local and should be visible immediately, independently
+      // of catalogue network requests.
+      renderContinueWatching();
+      catalogueActions.style.display = "none";
+
+      await loadInitialCatalogue();
+    }
+
+    // Restore the continue row when the page is revived from the back/forward
+    // cache, and if another tab updates the same ShowHub watch history.
+    window.addEventListener("pageshow", renderContinueWatching);
+    window.addEventListener("storage", event => {
+      if (event.key === WATCH_HISTORY_KEY || event.key === LEGACY_WATCH_HISTORY_KEY) {
+        renderContinueWatching();
+      }
+    });
+
+    initialiseShowHub();
   </script>
 
 </body>

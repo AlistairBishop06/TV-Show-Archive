@@ -2331,19 +2331,32 @@
 
     function populateHero(media) {
       if (!media) return;
+
+      // The hero is optional in the current layout. Search results used to throw
+      // here after the hero markup was removed, which made a successful search
+      // look like it had failed until another filter triggered a rerender.
+      const heroTitle = el("heroTitle");
+      const heroDescription = el("heroDescription");
+      const heroBg = el("heroBg");
+      const heroBrowse = el("heroBrowse");
+
+      if (!heroEyebrow || !heroTitle || !heroDescription || !heroBg || !heroBrowse) {
+        return;
+      }
+
       const isMovie = getMediaType(media) === "movie";
 
       heroEyebrow.textContent = isMovie ? "Featured movie" : "Featured TV series";
-      el("heroTitle").textContent = getMediaName(media);
-      el("heroDescription").textContent = getMediaSummary(media) ||
+      heroTitle.textContent = getMediaName(media);
+      heroDescription.textContent = getMediaSummary(media) ||
         (isMovie
           ? "Choose a film and watch it without leaving ShowHub."
           : "Choose a season and episode and watch without leaving ShowHub.");
 
       const image = getMediaBackdrop(media);
-      el("heroBg").style.backgroundImage = image ? `url("${image}")` : "";
-      el("heroBrowse").textContent = isMovie ? "Play movie" : "Browse episodes";
-      el("heroBrowse").onclick = () => isMovie ? openMovie(media) : openShow(media);
+      heroBg.style.backgroundImage = image ? `url("${image}")` : "";
+      heroBrowse.textContent = isMovie ? "Play movie" : "Browse episodes";
+      heroBrowse.onclick = () => isMovie ? openMovie(media) : openShow(media);
     }
 
     async function searchCatalogue(query) {
@@ -2632,17 +2645,36 @@
       );
     }
 
-    function closePlayer({ useHistory = true } = {}) {
+    function stopPlayerFrame() {
+      // Removing the iframe destroys its browsing context immediately, which is
+      // more reliable than merely hiding it or assigning an empty src. Reinsert
+      // the same element so it is ready for the next launch.
+      const frameWrap = playerFrame.parentElement;
+      playerFrame.remove();
+      playerFrame.removeAttribute("src");
+      if (frameWrap) frameWrap.appendChild(playerFrame);
+    }
+
+    function closePlayer({ resetRoute = true } = {}) {
       playerScreen.classList.remove("open");
       playerScreen.setAttribute("aria-hidden", "true");
-      playerFrame.src = "";
+      stopPlayerFrame();
       state.activePlayback = null;
       state.pendingEpisodeAdvance = false;
       state.episodeAdvanceInFlight = false;
       document.body.style.overflow = "";
       document.title = "ShowHub";
 
-      if (useHistory && location.hash.startsWith("#watch=")) history.back();
+      // Do not depend on history.back(): if another #watch entry is underneath
+      // the current one, the app can return to the menu while leaving the watch
+      // URL active. Explicitly restore the ShowHub route instead.
+      if (resetRoute && location.hash.startsWith("#watch=")) {
+        history.replaceState(
+          { player: false },
+          "",
+          `${location.pathname}${location.search}`
+        );
+      }
     }
 
     async function openShow(show) {
@@ -2864,7 +2896,7 @@
     });
 
     window.addEventListener("popstate", () => {
-      if (playerScreen.classList.contains("open")) closePlayer({ useHistory: false });
+      if (playerScreen.classList.contains("open")) closePlayer({ resetRoute: false });
     });
 
     document.addEventListener("keydown", event => {
@@ -2874,7 +2906,7 @@
         return;
       }
       if (modalWrap.classList.contains("open")) closeModal();
-    });
+    });f
 
     migrateWatchHistory();
     renderContinueWatching();

@@ -468,6 +468,37 @@
       background: #151820;
     }
 
+
+    .continue-card {
+      position: relative;
+    }
+
+    .continue-remove {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      z-index: 3;
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: 50%;
+      background: rgba(5,6,9,.78);
+      color: #fff;
+      font-size: 1rem;
+      line-height: 1;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+      transition: background .16s ease, transform .16s ease, border-color .16s ease;
+    }
+
+    .continue-remove:hover {
+      background: rgba(255,93,108,.9);
+      border-color: rgba(255,93,108,1);
+      transform: scale(1.05);
+    }
+
     .continue-poster {
       height: 100%;
       min-height: 144px;
@@ -935,6 +966,20 @@
       }
     }
 
+
+    function removeWatchEntry(entry) {
+      const updated = getWatchHistory().filter(item =>
+        !(
+          item.imdbId === entry.imdbId &&
+          Number(item.season) === Number(entry.season) &&
+          Number(item.episode) === Number(entry.episode)
+        )
+      );
+
+      setWatchHistory(updated);
+      renderContinueWatching();
+    }
+
     function renderContinueWatching() {
       const history = getWatchHistory()
         .sort((a, b) => (b.lastWatched || 0) - (a.lastWatched || 0))
@@ -971,6 +1016,13 @@
         return `
           <article class="continue-card" data-history-index="${index}" tabindex="0" role="button"
             aria-label="Resume ${escapeHtml(entry.name)} season ${entry.season} episode ${entry.episode}">
+            <button
+              class="continue-remove"
+              type="button"
+              data-remove-index="${index}"
+              aria-label="Remove ${escapeHtml(entry.name)} from Currently Watching"
+              title="Remove from Currently Watching"
+            >×</button>
             <div class="continue-poster">${poster}</div>
             <div class="continue-body">
               <div class="continue-title">${escapeHtml(entry.name)}</div>
@@ -984,6 +1036,17 @@
           </article>
         `;
       }).join("");
+
+      continueRow.querySelectorAll(".continue-remove").forEach(button => {
+        button.addEventListener("click", event => {
+          event.stopPropagation();
+          removeWatchEntry(history[Number(button.dataset.removeIndex)]);
+        });
+
+        button.addEventListener("keydown", event => {
+          event.stopPropagation();
+        });
+      });
 
       continueRow.querySelectorAll(".continue-card").forEach(card => {
         const resume = () => resumeHistoryEntry(

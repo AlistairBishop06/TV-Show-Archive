@@ -428,6 +428,126 @@
 
 
 
+
+    .continue-section {
+      display: none;
+      margin: 0 0 38px;
+    }
+
+    .continue-section.visible {
+      display: block;
+    }
+
+    .continue-row {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(300px, 360px);
+      gap: 14px;
+      overflow-x: auto;
+      padding: 2px 2px 14px;
+      scrollbar-width: thin;
+      scroll-snap-type: x proximity;
+    }
+
+    .continue-card {
+      scroll-snap-align: start;
+      display: grid;
+      grid-template-columns: 96px minmax(0, 1fr);
+      min-height: 144px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 17px;
+      background: var(--panel);
+      cursor: pointer;
+      transition: transform .18s ease, border-color .18s ease, background .18s ease;
+    }
+
+    .continue-card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(124,92,255,.45);
+      background: #151820;
+    }
+
+    .continue-poster {
+      height: 100%;
+      min-height: 144px;
+      background:
+        linear-gradient(135deg, rgba(124,92,255,.2), rgba(255,255,255,.03)),
+        #171923;
+      overflow: hidden;
+    }
+
+    .continue-poster img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .continue-fallback {
+      height: 100%;
+      display: grid;
+      place-items: center;
+      padding: 10px;
+      text-align: center;
+      font-size: .8rem;
+      font-weight: 800;
+      color: #d7d4e8;
+    }
+
+    .continue-body {
+      min-width: 0;
+      padding: 15px 15px 13px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .continue-title {
+      font-weight: 800;
+      letter-spacing: -.02em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .continue-episode {
+      margin-top: 4px;
+      color: #c6cad4;
+      font-size: .84rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .continue-time {
+      margin-top: 11px;
+      color: var(--muted);
+      font-size: .76rem;
+    }
+
+    .progress-track {
+      height: 5px;
+      margin-top: 7px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255,255,255,.1);
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    }
+
+    .resume-label {
+      margin-top: 9px;
+      color: #c7bdff;
+      font-size: .76rem;
+      font-weight: 800;
+    }
+
     .catalogue-actions {
       display: flex;
       justify-content: center;
@@ -549,6 +669,7 @@
       .hero { min-height: 350px; border-radius: 21px; }
       .hero-content { min-height: 350px; padding: 28px 24px; }
       .grid { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+      .continue-row { grid-auto-columns: minmax(280px, 86vw); }
       .modal-wrap { padding: 10px; }
       .modal-banner, .modal-content { padding-left: 22px; padding-right: 22px; }
     }
@@ -575,6 +696,17 @@
           <button id="heroBrowse" class="btn btn-primary">Browse episodes</button>
         </div>
       </div>
+    </section>
+
+
+    <section id="continueSection" class="continue-section">
+      <div class="section-head">
+        <div>
+          <h2>Currently Watching</h2>
+          <small>Pick up exactly where you left off</small>
+        </div>
+      </div>
+      <div id="continueRow" class="continue-row"></div>
     </section>
 
     <section>
@@ -641,6 +773,8 @@
   <script>
     const TVMAZE_API = "https://api.tvmaze.com";
     const HOME_PAGE_BATCH = 2;
+    const WATCH_HISTORY_KEY = "showhub-watch-history-v1";
+    const MAX_WATCH_HISTORY = 40;
 
     const state = {
       homeShows: [],
@@ -650,7 +784,9 @@
       currentEpisodes: [],
       searching: false,
       searchTimer: null,
-      loadingMore: false
+      loadingMore: false,
+      activePlayback: null,
+      lastProgressWrite: 0
     };
 
     const el = id => document.getElementById(id);
@@ -671,6 +807,217 @@
     const playerSubtitle = el("playerSubtitle");
     const loadMoreButton = el("loadMoreButton");
     const catalogueActions = el("catalogueActions");
+    const continueSection = el("continueSection");
+    const continueRow = el("continueRow");
+
+
+    function getWatchHistory() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(WATCH_HISTORY_KEY) || "[]");
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function setWatchHistory(entries) {
+      localStorage.setItem(
+        WATCH_HISTORY_KEY,
+        JSON.stringify(
+          [...entries]
+            .sort((a, b) => (b.lastWatched || 0) - (a.lastWatched || 0))
+            .slice(0, MAX_WATCH_HISTORY)
+        )
+      );
+    }
+
+    function formatWatchTime(seconds) {
+      const total = Math.max(0, Math.floor(Number(seconds) || 0));
+      const hours = Math.floor(total / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      const secs = total % 60;
+
+      if (hours) {
+        return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+      }
+
+      return `${minutes}:${String(secs).padStart(2, "0")}`;
+    }
+
+    function getSavedEpisode(imdbId, season, episode) {
+      return getWatchHistory().find(entry =>
+        entry.imdbId === imdbId &&
+        Number(entry.season) === Number(season) &&
+        Number(entry.episode) === Number(episode)
+      );
+    }
+
+    function makeWatchEntry(show, season, episode, existing = null) {
+      const episodeData = state.currentEpisodes.find(item =>
+        Number(item.season) === Number(season) &&
+        Number(item.number) === Number(episode)
+      );
+
+      return {
+        imdbId: show.externals.imdb,
+        showId: show.id || existing?.showId || null,
+        name: show.name,
+        poster: show.image?.medium || show.image?.original || existing?.poster || "",
+        backdrop: show.image?.original || show.image?.medium || existing?.backdrop || "",
+        summary: stripHtml(show.summary || "") || existing?.summary || "",
+        season: Number(season),
+        episode: Number(episode),
+        episodeName: episodeData?.name || existing?.episodeName || "",
+        currentTime: Number(existing?.currentTime) || 0,
+        duration: Number(existing?.duration) || 0,
+        lastWatched: Date.now()
+      };
+    }
+
+    function saveWatchEntry(entry) {
+      const history = getWatchHistory();
+      // Keep one "Currently Watching" card per show. Opening another episode
+      // replaces the previous card for that series with the latest episode.
+      const withoutCurrentShow = history.filter(
+        item => item.imdbId !== entry.imdbId
+      );
+      setWatchHistory([entry, ...withoutCurrentShow]);
+      renderContinueWatching();
+    }
+
+    function updatePlaybackProgress(currentTime, duration, eventName = "") {
+      if (!state.activePlayback) return;
+
+      const now = Date.now();
+      const importantEvent = ["pause", "seeked", "ended"].includes(eventName);
+
+      // timeupdate can fire frequently; writing every few seconds is enough.
+      if (!importantEvent && now - state.lastProgressWrite < 3000) return;
+      state.lastProgressWrite = now;
+
+      const active = state.activePlayback;
+      const existing = getSavedEpisode(
+        active.show.externals.imdb,
+        active.season,
+        active.episode
+      );
+
+      const entry = makeWatchEntry(
+        active.show,
+        active.season,
+        active.episode,
+        existing
+      );
+
+      if (Number.isFinite(Number(currentTime))) {
+        entry.currentTime = Math.max(0, Number(currentTime));
+      }
+
+      if (Number.isFinite(Number(duration)) && Number(duration) > 0) {
+        entry.duration = Number(duration);
+      }
+
+      if (eventName === "ended" && entry.duration > 0) {
+        entry.currentTime = entry.duration;
+      }
+
+      entry.lastWatched = Date.now();
+      saveWatchEntry(entry);
+    }
+
+    function isVidFastOrigin(origin) {
+      try {
+        const url = new URL(origin);
+        return url.protocol === "https:" &&
+          (url.hostname === "vidfast.vc" || url.hostname.endsWith(".vidfast.vc"));
+      } catch {
+        return false;
+      }
+    }
+
+    function renderContinueWatching() {
+      const history = getWatchHistory()
+        .sort((a, b) => (b.lastWatched || 0) - (a.lastWatched || 0))
+        .slice(0, 12);
+
+      if (!history.length) {
+        continueSection.classList.remove("visible");
+        continueRow.innerHTML = "";
+        return;
+      }
+
+      continueSection.classList.add("visible");
+
+      continueRow.innerHTML = history.map((entry, index) => {
+        const duration = Number(entry.duration) || 0;
+        const current = Number(entry.currentTime) || 0;
+        const percentage = duration > 0
+          ? Math.max(0, Math.min(100, (current / duration) * 100))
+          : 0;
+
+        const timeLabel = duration > 0
+          ? `${formatWatchTime(current)} / ${formatWatchTime(duration)} · ${Math.round(percentage)}%`
+          : current > 0
+            ? `${formatWatchTime(current)} watched`
+            : "Started";
+
+        const episodeLabel = `S${entry.season} E${entry.episode}` +
+          (entry.episodeName ? ` · ${entry.episodeName}` : "");
+
+        const poster = entry.poster
+          ? `<img src="${escapeHtml(entry.poster)}" alt="${escapeHtml(entry.name)} poster">`
+          : `<div class="continue-fallback">${escapeHtml(entry.name)}</div>`;
+
+        return `
+          <article class="continue-card" data-history-index="${index}" tabindex="0" role="button"
+            aria-label="Resume ${escapeHtml(entry.name)} season ${entry.season} episode ${entry.episode}">
+            <div class="continue-poster">${poster}</div>
+            <div class="continue-body">
+              <div class="continue-title">${escapeHtml(entry.name)}</div>
+              <div class="continue-episode">${escapeHtml(episodeLabel)}</div>
+              <div class="continue-time">${escapeHtml(timeLabel)}</div>
+              <div class="progress-track" aria-hidden="true">
+                <div class="progress-fill" style="width:${percentage}%"></div>
+              </div>
+              <div class="resume-label">▶ Resume</div>
+            </div>
+          </article>
+        `;
+      }).join("");
+
+      continueRow.querySelectorAll(".continue-card").forEach(card => {
+        const resume = () => resumeHistoryEntry(
+          history[Number(card.dataset.historyIndex)]
+        );
+
+        card.addEventListener("click", resume);
+        card.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            resume();
+          }
+        });
+      });
+    }
+
+    function resumeHistoryEntry(entry) {
+      if (!entry?.imdbId) return;
+
+      const show = {
+        id: entry.showId,
+        name: entry.name,
+        summary: entry.summary || "",
+        externals: { imdb: entry.imdbId },
+        image: {
+          medium: entry.poster || "",
+          original: entry.backdrop || entry.poster || ""
+        }
+      };
+
+      openEpisode(show, entry.season, entry.episode, {
+        startAt: Number(entry.currentTime) || 0
+      });
+    }
 
     function stripHtml(value = "") {
       const div = document.createElement("div");
@@ -869,16 +1216,42 @@
       }
     }
 
-    function buildWatchUrl(show, season, episode) {
-      return `https://vidfast.vc/tv/${encodeURIComponent(show.externals.imdb)}/${season}/${episode}?autoPlay=true`;
+    function buildWatchUrl(show, season, episode, startAt = 0) {
+      const params = new URLSearchParams({ autoPlay: "true" });
+
+      if (Number(startAt) >= 5) {
+        params.set("startAt", String(Math.floor(Number(startAt))));
+      }
+
+      return `https://vidfast.vc/tv/${encodeURIComponent(show.externals.imdb)}/${season}/${episode}?${params.toString()}`;
     }
 
-    function openEpisode(show, season, episode) {
+    function openEpisode(show, season, episode, options = {}) {
       closeModal();
 
+      const existing = getSavedEpisode(show.externals.imdb, season, episode);
+      const requestedStart = Number(options.startAt);
+      const startAt = Number.isFinite(requestedStart)
+        ? requestedStart
+        : Number(existing?.currentTime) || 0;
+
+      const watchEntry = makeWatchEntry(show, season, episode, existing);
+      watchEntry.lastWatched = Date.now();
+      saveWatchEntry(watchEntry);
+
+      state.activePlayback = {
+        show,
+        season: Number(season),
+        episode: Number(episode)
+      };
+      state.lastProgressWrite = 0;
+
       playerTitle.textContent = show.name;
-      playerSubtitle.textContent = `Season ${season} · Episode ${episode}`;
-      playerFrame.src = buildWatchUrl(show, season, episode);
+      playerSubtitle.textContent =
+        `Season ${season} · Episode ${episode}` +
+        (startAt >= 5 ? ` · Resuming at ${formatWatchTime(startAt)}` : "");
+
+      playerFrame.src = buildWatchUrl(show, season, episode, startAt);
 
       playerScreen.classList.add("open");
       playerScreen.setAttribute("aria-hidden", "false");
@@ -895,6 +1268,7 @@
       playerScreen.classList.remove("open");
       playerScreen.setAttribute("aria-hidden", "true");
       playerFrame.src = "";
+      state.activePlayback = null;
       document.body.style.overflow = "";
 
       if (useHistory && location.hash.startsWith("#watch=")) {
@@ -1029,6 +1403,38 @@
       if (event.target === modalWrap) closeModal();
     });
 
+
+    window.addEventListener("message", event => {
+      if (!isVidFastOrigin(event.origin)) return;
+      if (event.source !== playerFrame.contentWindow) return;
+
+      let message = event.data;
+
+      if (typeof message === "string") {
+        try {
+          message = JSON.parse(message);
+        } catch {
+          return;
+        }
+      }
+
+      if (message?.type !== "PLAYER_EVENT") return;
+
+      const data = message.data || {};
+      const eventName = data.event || "";
+
+      if (
+        Number.isFinite(Number(data.currentTime)) ||
+        Number.isFinite(Number(data.duration))
+      ) {
+        updatePlaybackProgress(
+          Number(data.currentTime),
+          Number(data.duration),
+          eventName
+        );
+      }
+    });
+
     window.addEventListener("popstate", () => {
       if (playerScreen.classList.contains("open")) {
         closePlayer({ useHistory: false });
@@ -1046,6 +1452,7 @@
       if (modalWrap.classList.contains("open")) closeModal();
     });
 
+    renderContinueWatching();
     loadHomeBatch();
   </script>
 </body>

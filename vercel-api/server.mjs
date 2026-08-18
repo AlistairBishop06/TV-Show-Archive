@@ -1,27 +1,21 @@
 import crypto from "node:crypto";
 import { promisify } from "node:util";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import express from "express";
 import { neon } from "@neondatabase/serverless";
 
 const DATABASE_URL = process.env.DATABASE_URL;
-const PORT = 3000;
-const SESSION_COOKIE = "showhub_session";
+const PORT = 3000; // Local development only; Vercel supplies its own runtime.
 const SESSION_DAYS = 30;
 const MAX_WATCH_HISTORY = 40;
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_MAX_ATTEMPTS = 20;
 
 if (!DATABASE_URL) {
-  console.error("Missing DATABASE_URL. Copy .env.example to .env and paste your Neon connection string.");
-  process.exit(1);
+  throw new Error("Missing DATABASE_URL. Add DATABASE_URL in Vercel Project Settings → Environment Variables.");
 }
 
 const sql = neon(DATABASE_URL);
 const scryptAsync = promisify(crypto.scrypt);
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const publicDir = path.join(__dirname, "public");
 const app = express();
 const authAttempts = new Map();
 
@@ -35,29 +29,41 @@ app.use((req, res, next) => {
   next();
 });
 
+// IMPORTANT: for a project Pages URL such as
+// https://YOUR_GITHUB_USERNAME.github.io/TV-Show-Archive/
+// the browser Origin is only https://YOUR_GITHUB_USERNAME.github.io (no repo path).
+const GITHUB_PAGES_ORIGIN = "https://alistairbishop06.github.io";
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  if (origin === GITHUB_PAGES_ORIGIN) return true;
+  try {
+    const url = new URL(origin);
+    return ["localhost", "127.0.0.1", "::1"].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 app.use((req, res, next) => {
   const origin = req.get("origin");
-  if (origin) {
-    try {
-      const originUrl = new URL(origin);
-      const requestUrl = new URL(`${req.protocol}://${req.get("host")}`);
 
-      // Allow credentialed requests between loopback development origins only.
-      // Production requests remain same-origin and need no CORS configuration.
-      if (isLoopbackHostname(originUrl.hostname) && isLoopbackHostname(requestUrl.hostname)) {
-        res.setHeader("Access-Control-Allow-Origin", origin);
-        res.setHeader("Access-Control-Allow-Credentials", "true");
-        res.setHeader("Vary", "Origin");
-        if (req.method === "OPTIONS") {
-          res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-          res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-          return res.status(204).end();
-        }
-      }
-    } catch {
-      // Ignore malformed Origin headers here; sameOriginOnly handles mutations.
-    }
+  if (origin && isAllowedOrigin(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   }
+
+  if (req.method === "OPTIONS") {
+    if (!isAllowedOrigin(origin)) return res.status(403).end();
+    return res.status(204).end();
+  }
+
+  if (origin && !isAllowedOrigin(origin)) {
+    return res.status(403).json({ error: "Origin not allowed." });
+  }
+
   next();
 });
 
@@ -71,23 +77,6 @@ function normaliseUsername(value) {
 
 function validUsername(username) {
   return /^[a-z0-9][a-z0-9._-]{2,29}$/.test(username);
-}
-
-function isLoopbackHostname(hostname) {
-  return ["localhost", "127.0.0.1", "::1"].includes(String(hostname || "").toLowerCase());
-}
-
-function parseCookies(req) {
-  const header = req.headers.cookie || "";
-  const result = {};
-  for (const part of header.split(";")) {
-    const index = part.indexOf("=");
-    if (index === -1) continue;
-    const key = part.slice(0, index).trim();
-    const value = part.slice(index + 1).trim();
-    if (key) result[key] = decodeURIComponent(value);
-  }
-  return result;
 }
 
 function sessionHash(token) {
@@ -123,17 +112,7 @@ async function verifyPassword(password, encoded) {
   }
 }
 
-function sessionCookieOptions(req) {
-  return {
-    httpOnly: true,
-    secure: req.secure,
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_DAYS * 24 * 60 * 60 * 1000
-  };
-}
-
-async function createSession(userId, req, res) {
+async function createSession(userId) {
   const rawToken = crypto.randomBytes(32).toString("base64url");
   const tokenHash = sessionHash(rawToken);
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000).toISOString();
@@ -144,38 +123,13 @@ async function createSession(userId, req, res) {
     VALUES (${tokenHash}, ${userId}, ${expiresAt})
   `;
 
-  res.cookie(SESSION_COOKIE, rawToken, sessionCookieOptions(req));
+  return rawToken;
 }
 
-function clearSessionCookie(req, res) {
-  res.clearCookie(SESSION_COOKIE, {
-    httpOnly: true,
-    secure: req.secure,
-    sameSite: "lax",
-    path: "/"
-  });
-}
-
-function sameOriginOnly(req, res, next) {
-  if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) return next();
-  const origin = req.get("origin");
-  if (!origin) return next();
-
-  try {
-    const originUrl = new URL(origin);
-    const requestUrl = new URL(`${req.protocol}://${req.get("host")}`);
-
-    if (originUrl.origin === requestUrl.origin) return next();
-
-    // Permit localhost/127.0.0.1 development across local ports only.
-    if (isLoopbackHostname(originUrl.hostname) && isLoopbackHostname(requestUrl.hostname)) {
-      return next();
-    }
-
-    return res.status(403).json({ error: "Cross-site request blocked." });
-  } catch {
-    return res.status(403).json({ error: "Cross-site request blocked." });
-  }
+function readBearerToken(req) {
+  const value = String(req.get("authorization") || "");
+  const match = value.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : "";
 }
 
 function authRateLimit(req, res, next) {
@@ -200,7 +154,7 @@ function authRateLimit(req, res, next) {
 
 async function requireAuth(req, res, next) {
   try {
-    const token = parseCookies(req)[SESSION_COOKIE];
+    const token = readBearerToken(req);
     if (!token) return res.status(401).json({ error: "Sign in required." });
 
     const tokenHash = sessionHash(token);
@@ -214,10 +168,7 @@ async function requireAuth(req, res, next) {
     `;
 
     const row = rows[0];
-    if (!row) {
-      clearSessionCookie(req, res);
-      return res.status(401).json({ error: "Session expired." });
-    }
+    if (!row) return res.status(401).json({ error: "Session expired." });
 
     req.user = {
       id: row.id,
@@ -404,8 +355,6 @@ async function ensureSchema() {
   `;
 }
 
-app.use("/api", sameOriginOnly);
-
 app.get("/api/health", async (_req, res, next) => {
   try {
     const rows = await sql`SELECT now() AS now`;
@@ -444,8 +393,8 @@ app.post("/api/auth/register", authRateLimit, async (req, res, next) => {
       throw error;
     }
 
-    await createSession(userId, req, res);
-    res.status(201).json({ user: { id: userId, username } });
+    const token = await createSession(userId);
+    res.status(201).json({ user: { id: userId, username }, token });
   } catch (error) {
     next(error);
   }
@@ -469,20 +418,16 @@ app.post("/api/auth/login", authRateLimit, async (req, res, next) => {
       return res.status(401).json({ error: "Incorrect username or password." });
     }
 
-    await createSession(user.id, req, res);
-    res.json({ user: serialiseUser(user) });
+    const token = await createSession(user.id);
+    res.json({ user: serialiseUser(user), token });
   } catch (error) {
     next(error);
   }
 });
 
-app.post("/api/auth/logout", async (req, res, next) => {
+app.post("/api/auth/logout", requireAuth, async (req, res, next) => {
   try {
-    const token = parseCookies(req)[SESSION_COOKIE];
-    if (token) {
-      await sql`DELETE FROM sessions WHERE token_hash = ${sessionHash(token)}`;
-    }
-    clearSessionCookie(req, res);
+    await sql`DELETE FROM sessions WHERE token_hash = ${req.sessionTokenHash}`;
     res.status(204).end();
   } catch (error) {
     next(error);
@@ -573,17 +518,11 @@ app.delete("/api/watch-history/:imdbId", requireAuth, async (req, res, next) => 
   }
 });
 
-app.use(express.static(publicDir, {
-  extensions: ["html"],
-  maxAge: 0
-}));
-
 app.use((req, res, next) => {
   if (req.path.startsWith("/api/")) {
     return res.status(404).json({ error: "API route not found." });
   }
-  if (req.method !== "GET") return next();
-  res.sendFile(path.join(publicDir, "index.html"));
+  next();
 });
 
 app.use((error, _req, res, _next) => {
@@ -595,6 +534,14 @@ app.use((error, _req, res, _next) => {
 });
 
 await ensureSchema();
-app.listen(PORT, () => {
-  console.log(`ShowHub running on http://localhost:${PORT}`);
-});
+
+// Vercel's Express runtime uses the default export.
+export default app;
+
+// Keeps `npm run dev` useful locally. VERCEL is provided by Vercel automatically;
+// it is not something you add to .env.
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`ShowHub API running on http://localhost:${PORT}`);
+  });
+}

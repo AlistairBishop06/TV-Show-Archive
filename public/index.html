@@ -2419,11 +2419,13 @@
     </div>
   </div>
 
+  <script src="./config.js"></script>
   <script>
     const TVMAZE_API = "https://api.tvmaze.com";
     const CINEMETA_API = "https://v3-cinemeta.strem.io";
     const HOME_PAGE_BATCH = 1;
     const WATCH_HISTORY_KEY = "showhub-watch-history-v2";
+    const AUTH_TOKEN_KEY = "showhub-auth-token-v1";
     const LEGACY_WATCH_HISTORY_KEY = "showhub-watch-history-v1";
     const MAX_WATCH_HISTORY = 40;
     const MIN_ITEMS_PER_GENRE_ROW = 5;
@@ -2586,13 +2588,37 @@
       return normaliseHistoryList([...merged.values()]);
     }
 
+    function getAuthToken() {
+      return localStorage.getItem(AUTH_TOKEN_KEY) || "";
+    }
+
+    function saveAuthToken(token) {
+      if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
+      else localStorage.removeItem(AUTH_TOKEN_KEY);
+    }
+
+    function clearAuthSession() {
+      saveAuthToken("");
+      setAccountUser(null);
+    }
+
     async function apiFetch(path, options = {}) {
+      const apiBase = String(window.SHOWHUB_API_BASE || "").replace(/\/+$/, "");
+      if (!apiBase || apiBase.includes("YOUR-VERCEL-PROJECT")) {
+        const error = new Error("ShowHub API is not configured. Set SHOWHUB_API_BASE in public/config.js.");
+        error.status = 0;
+        throw error;
+      }
+
       const headers = { ...(options.headers || {}) };
       if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-      const response = await fetch(path, {
+
+      const token = getAuthToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const response = await fetch(`${apiBase}${path}`, {
         ...options,
-        headers,
-        credentials: "include"
+        headers
       });
       const data = response.status === 204 ? null : await response.json().catch(() => null);
       if (!response.ok) {
@@ -2731,13 +2757,21 @@
     }
 
     async function restoreAccountSession() {
+      if (!getAuthToken()) {
+        setAccountUser(null);
+        return;
+      }
+
       try {
         const data = await apiFetch("/api/auth/me");
         setAccountUser(data?.user || null);
         if (state.user) await syncWatchHistoryFromAccount();
       } catch (error) {
-        if (error.status !== 401) console.warn("Account session check failed", error);
-        setAccountUser(null);
+        if (error.status === 401) clearAuthSession();
+        else {
+          console.warn("Account session check failed", error);
+          setAccountUser(null);
+        }
       }
     }
 
@@ -2757,6 +2791,8 @@
           method: "POST",
           body: JSON.stringify(payload)
         });
+        if (!data?.token) throw new Error("The API did not return a session token.");
+        saveAuthToken(data.token);
         setAccountUser(data?.user || null);
         closeAuthModal();
         authForm.reset();
@@ -2774,7 +2810,7 @@
       } catch (error) {
         console.warn("Logout request failed", error);
       } finally {
-        setAccountUser(null);
+        clearAuthSession();
       }
     }
 
@@ -3934,7 +3970,7 @@
         );
       } catch (error) {
         if (error.status === 401) {
-          setAccountUser(null);
+          clearAuthSession();
           openAuthModal("signin");
           authSubtitle.textContent = "Your session expired. Sign in again to keep watching.";
           return;
@@ -3978,7 +4014,7 @@
         );
       } catch (error) {
         if (error.status === 401) {
-          setAccountUser(null);
+          clearAuthSession();
           openAuthModal("signin");
           authSubtitle.textContent = "Your session expired. Sign in again to keep watching.";
           return;

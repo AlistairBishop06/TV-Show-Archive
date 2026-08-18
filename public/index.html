@@ -2678,6 +2678,27 @@
     .live-category-chip { white-space: nowrap; padding: 7px 12px; }
 
     .live-guide-events { padding: 8px 24px 24px; }
+
+    .live-guide-day-group {
+      margin-top: 24px;
+    }
+
+    .live-guide-day-group + .live-guide-day-group {
+      margin-top: 38px;
+      padding-top: 28px;
+      border-top: 1px solid var(--border);
+    }
+
+    .live-guide-date-heading {
+      margin-bottom: 4px;
+    }
+
+    .live-guide-date-heading h2 {
+      margin: 5px 0 0;
+      font-size: 20px;
+      letter-spacing: -.45px;
+    }
+
     .live-event-group { margin-top: 22px; }
 
     .live-event-group-head {
@@ -4594,15 +4615,13 @@
     }
 
     function renderLiveSports(query = "") {
-      const requestedDate = guideDate(state.liveScheduleOffset);
-      const dateMatches = state.liveSportsScheduleDate === requestedDate;
-      const allEvents = dateMatches ? state.liveSportsScheduleEvents : [];
+      const allEvents = state.liveSportsScheduleEvents || [];
       const categories = [...new Set(allEvents.map(event => event.category || "Other"))];
       if (state.liveSportsScheduleCategory !== "all" && !categories.includes(state.liveSportsScheduleCategory)) {
         state.liveSportsScheduleCategory = "all";
       }
 
-      const events = dateMatches ? filteredLiveScheduleEvents(query) : [];
+      const events = filteredLiveScheduleEvents(query);
       const channelTerm = String(query || "").trim().toLowerCase();
       const channels = channelTerm
         ? LIVE_SPORTS_CHANNELS.filter(channel =>
@@ -4613,9 +4632,9 @@
         : LIVE_SPORTS_CHANNELS;
 
       let scheduleBody = "";
-      if (state.liveSportsScheduleLoading && !dateMatches) {
+      if (state.liveSportsScheduleLoading && !allEvents.length) {
         scheduleBody = `<div class="live-guide-status"><div class="spinner"></div><span>Loading all live events…</span></div>`;
-      } else if (state.liveSportsScheduleError) {
+      } else if (state.liveSportsScheduleError && !allEvents.length) {
         scheduleBody = `
           <div class="live-guide-status live-guide-error">
             <strong>Schedule could not be loaded.</strong>
@@ -4625,26 +4644,43 @@
       } else if (!events.length) {
         const message = allEvents.length
           ? "No live events match your current filters."
-          : "No live events were returned for this date.";
+          : "No upcoming events were returned by the schedule.";
         scheduleBody = `<div class="live-guide-status">${escapeHtml(message)}</div>`;
       } else {
-        const grouped = new Map();
+        const byDate = new Map();
         events.forEach((event, index) => {
-          const category = event.category || "Other";
-          if (!grouped.has(category)) grouped.set(category, []);
-          grouped.get(category).push({ event, index });
+          const date = event.date || "";
+          if (!byDate.has(date)) byDate.set(date, []);
+          byDate.get(date).push({ event, index });
         });
-        scheduleBody = [...grouped.entries()].map(([category, items]) => `
-          <section class="live-event-group">
-            <div class="live-event-group-head">
-              <h3>${escapeHtml(category)}</h3>
-              <span>${items.length} event${items.length === 1 ? "" : "s"}</span>
-            </div>
-            <div class="live-event-list">
-              ${items.map(({ event, index }) => liveEventMarkup(event, index)).join("")}
-            </div>
-          </section>
-        `).join("");
+
+        scheduleBody = [...byDate.entries()].map(([date, datedItems]) => {
+          const byCategory = new Map();
+          datedItems.forEach(item => {
+            const category = item.event.category || "Other";
+            if (!byCategory.has(category)) byCategory.set(category, []);
+            byCategory.get(category).push(item);
+          });
+
+          return `
+            <section class="live-guide-day-group">
+              <div class="live-guide-date-heading">
+                <div class="eyebrow">Schedule time UK</div>
+                <h2>${escapeHtml(formatLiveGuideDate(date))}</h2>
+              </div>
+              ${[...byCategory.entries()].map(([category, items]) => `
+                <section class="live-event-group">
+                  <div class="live-event-group-head">
+                    <h3>${escapeHtml(category)}</h3>
+                    <span>${items.length} event${items.length === 1 ? "" : "s"}</span>
+                  </div>
+                  <div class="live-event-list">
+                    ${items.map(({ event, index }) => liveEventMarkup(event, index)).join("")}
+                  </div>
+                </section>
+              `).join("")}
+            </section>`;
+        }).join("");
       }
 
       const categoryButtons = ["all", ...categories].map(category => `
@@ -4671,13 +4707,11 @@
         <section class="live-guide-main">
           <div class="live-guide-toolbar">
             <div>
-              <div class="eyebrow">Schedule time UK GMT</div>
-              <h2>${escapeHtml(formatLiveGuideDate(requestedDate))}</h2>
-              <p>All sports from the DLStreams schedule. Click any event to open its primary stream, or choose a specific channel underneath.</p>
+              <div class="eyebrow">Live & upcoming</div>
+              <h2>All upcoming sports</h2>
+              <p>Every event returned by the DLStreams schedule. Click an event to open its primary stream, or choose a specific channel underneath.</p>
             </div>
-            <div class="live-guide-day-tabs" aria-label="Schedule day">
-              <button type="button" data-live-day="0" class="${state.liveScheduleOffset === 0 ? "active" : ""}">Today</button>
-              <button type="button" data-live-day="1" class="${state.liveScheduleOffset === 1 ? "active" : ""}">Tomorrow</button>
+            <div class="live-guide-day-tabs" aria-label="Schedule controls">
               <button type="button" class="live-guide-refresh" data-live-guide-refresh aria-label="Refresh schedule">Refresh</button>
             </div>
           </div>
@@ -4697,16 +4731,8 @@
         </section>
       `;
 
-      liveSportsContent.querySelectorAll("[data-live-day]").forEach(button => {
-        button.addEventListener("click", () => {
-          const offset = Number(button.dataset.liveDay) || 0;
-          state.liveSportsScheduleCategory = "all";
-          loadLiveSportsMainSchedule(offset);
-        });
-      });
-
       liveSportsContent.querySelectorAll("[data-live-guide-refresh]").forEach(button => {
-        button.addEventListener("click", () => loadLiveSportsMainSchedule(state.liveScheduleOffset, { force: true }));
+        button.addEventListener("click", () => loadLiveSportsMainSchedule({ force: true }));
       });
 
       liveSportsContent.querySelectorAll("[data-live-category]").forEach(button => {
@@ -4748,36 +4774,34 @@
         });
       });
 
-      if (!dateMatches && !state.liveSportsScheduleLoading) {
-        loadLiveSportsMainSchedule(state.liveScheduleOffset);
+      if (state.liveSportsScheduleDate !== "all" && !state.liveSportsScheduleLoading) {
+        loadLiveSportsMainSchedule();
       }
     }
 
-    async function loadLiveSportsMainSchedule(offsetDays = 0, { force = false } = {}) {
-      const date = guideDate(offsetDays);
-      if (!force && state.liveSportsScheduleDate === date && state.liveSportsScheduleEvents.length) {
-        state.liveScheduleOffset = offsetDays;
+    async function loadLiveSportsMainSchedule({ force = false } = {}) {
+      if (!force && state.liveSportsScheduleDate === "all") {
         renderLiveSports(searchInput.value);
         return;
       }
       if (state.liveSportsScheduleLoading && !force) return;
 
       const requestId = ++state.liveSportsScheduleRequest;
-      state.liveScheduleOffset = offsetDays;
       state.liveSportsScheduleLoading = true;
       state.liveSportsScheduleError = "";
-      if (state.liveSportsScheduleDate !== date) state.liveSportsScheduleEvents = [];
+      if (force) state.liveSportsScheduleDate = "";
       renderLiveSports(searchInput.value);
 
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 9000);
       try {
-        const data = await apiFetch(
-          `/api/live-sports/schedule?date=${encodeURIComponent(date)}`
-        );
+        const data = await apiFetch("/api/live-sports/schedule", { signal: controller.signal });
         if (requestId !== state.liveSportsScheduleRequest) return;
 
         const events = Array.isArray(data?.events) ? data.events : [];
-        state.liveSportsScheduleDate = date;
+        state.liveSportsScheduleDate = "all";
         state.liveSportsScheduleEvents = events.map(event => ({
+          date: /^\d{4}-\d{2}-\d{2}$/.test(String(event.date || "")) ? String(event.date) : "",
           time: String(event.time || "").match(/\b\d{1,2}:\d{2}\b/)?.[0]?.padStart(5, "0") || "--:--",
           title: String(event.title || "Untitled event"),
           category: String(event.category || "Other"),
@@ -4794,10 +4818,13 @@
       } catch (error) {
         console.error("Live sports schedule failed", error);
         if (requestId !== state.liveSportsScheduleRequest) return;
-        state.liveSportsScheduleDate = date;
+        state.liveSportsScheduleDate = "";
         state.liveSportsScheduleEvents = [];
-        state.liveSportsScheduleError = error?.message || "The public schedule source did not respond.";
+        state.liveSportsScheduleError = error?.name === "AbortError"
+          ? "The schedule server took too long to respond. Try again."
+          : (error?.message || "The public schedule source did not respond.");
       } finally {
+        clearTimeout(timeout);
         if (requestId === state.liveSportsScheduleRequest) {
           state.liveSportsScheduleLoading = false;
           if (state.typeScope === "live") renderLiveSports(searchInput.value);

@@ -22,8 +22,9 @@ const authAttempts = new Map();
 const liveSportsScheduleCache = new Map();
 const LIVE_SPORTS_SCHEDULE_CACHE_MS = 10 * 60 * 1000;
 const DLSTREAMS_PUBLIC_SCHEDULE_URLS = [
-  "https://dlstreams.st/",
+  "https://dlstreams.com/",
   "https://dlhd.st/",
+  "https://dlstreams.st/",
   "https://dlhd.dad/"
 ];
 
@@ -566,70 +567,65 @@ async function fetchScheduleResponse(url, options = {}) {
 }
 
 async function fetchDlstreamsPublicSchedule() {
-  const cacheKey = "dlstreams:public-schedule-v2";
+  const cacheKey = "dlstreams:public-schedule-v3";
   const cached = liveSportsScheduleCache.get(cacheKey);
   if (cached && Date.now() - cached.savedAt < LIVE_SPORTS_SCHEDULE_CACHE_MS) {
     return cached.days;
   }
 
   const errors = [];
-
-  // First try the public pages directly. This is fastest when the upstream is
-  // not presenting an anti-bot page to Vercel.
-  for (const url of DLSTREAMS_PUBLIC_SCHEDULE_URLS) {
+  const directAttempts = DLSTREAMS_PUBLIC_SCHEDULE_URLS.map(async url => {
     try {
       const payload = await fetchScheduleResponse(url, {
-        timeout: 12000,
+        timeout: 5500,
         headers: {
           Accept: "text/html,application/xhtml+xml",
           "Accept-Language": "en-GB,en;q=0.9",
-          Referer: "https://dlstreams.st/",
+          Referer: url,
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
         }
       });
-      const days = parseDlstreamsScheduleHtml(payload);
-      liveSportsScheduleCache.set(cacheKey, { savedAt: Date.now(), days });
-      return days;
+      return parseDlstreamsScheduleHtml(payload);
     } catch (error) {
       errors.push(`direct ${url}: ${error?.message || error}`);
+      throw error;
     }
-  }
+  });
 
-  // DLStreams/DLHD periodically blocks datacentre HTTP clients even though the
-  // public homepage is visible in a normal browser. Jina Reader is a public,
-  // no-key browser reader, so use it only as a fallback to read that same
-  // public schedule page. The response keeps the channel links and therefore
-  // their numeric stream IDs.
-  const readerTargets = [
-    "https://dlstreams.st/",
-    "https://dlhd.st/",
-    "https://dlhd.dad/"
-  ];
-
-  for (const target of readerTargets) {
-    const readerUrl = `https://r.jina.ai/${target}`;
+  // Reader is kept as one parallel fallback, never as a long sequential chain.
+  // This means a blocked upstream can no longer hold a Vercel function open for
+  // tens of seconds. The first parseable response wins.
+  const readerAttempt = (async () => {
+    const target = "https://dlstreams.com/";
     try {
-      const payload = await fetchScheduleResponse(readerUrl, {
-        timeout: 25000,
+      const payload = await fetchScheduleResponse(`https://r.jina.ai/${target}`, {
+        timeout: 6500,
         headers: {
           Accept: "text/plain,text/markdown;q=0.9,*/*;q=0.8",
           "X-No-Cache": "true",
-          "X-Engine": "browser",
-          "X-Timeout": "18"
+          "X-Timeout": "4"
         }
       });
-      const days = parseDlstreamsReaderText(payload);
-      liveSportsScheduleCache.set(cacheKey, { savedAt: Date.now(), days });
-      return days;
+      return parseDlstreamsReaderText(payload);
     } catch (error) {
       errors.push(`reader ${target}: ${error?.message || error}`);
+      throw error;
     }
-  }
+  })();
 
-  console.error("Live sports schedule sources failed", errors);
-  const error = new Error("The live sports schedule source is temporarily unavailable.");
-  error.status = 502;
-  throw error;
+  try {
+    const days = await Promise.any([...directAttempts, readerAttempt]);
+    liveSportsScheduleCache.set(cacheKey, { savedAt: Date.now(), days });
+    return days;
+  } catch {
+    // If a warm Vercel instance has an older successful copy, use it rather than
+    // showing an empty sports page during a temporary upstream outage.
+    if (cached?.days?.size) return cached.days;
+    console.error("Live sports schedule sources failed", errors);
+    const error = new Error("The live sports schedule source did not respond in time.");
+    error.status = 504;
+    throw error;
+  }
 }
 
 function liveScheduleEventsForDate(days, date, allowedIds = null) {
@@ -756,22 +752,19 @@ app.get("/api/health", async (_req, res, next) => {
 app.get("/api/live-sports/schedule", async (req, res, next) => {
   try {
     const requestedDate = validGuideDate(req.query.date);
-    if (!requestedDate) {
-      return res.status(400).json({ error: "Use a date in YYYY-MM-DD format." });
-    }
-
     const days = await fetchDlstreamsPublicSchedule();
     const availableDates = [...days.keys()].sort();
-    const selectedDate = days.has(requestedDate)
-      ? requestedDate
-      : (availableDates.length === 1 ? availableDates[0] : requestedDate);
-    const events = liveScheduleEventsForDate(days, selectedDate);
-    res.setHeader("Cache-Control", "public, max-age=120, s-maxage=600, stale-while-revalidate=300");
+
+    const dates = requestedDate ? [requestedDate] : availableDates;
+    const events = dates.flatMap(date =>
+      liveScheduleEventsForDate(days, date).map(event => ({ ...event, date }))
+    );
+
+    res.setHeader("Cache-Control", "public, max-age=120, s-maxage=600, stale-while-revalidate=600");
     res.json({
-      date: selectedDate,
-      requestedDate,
+      date: requestedDate || null,
       availableDates,
-      timezone: "UK GMT",
+      timezone: "Europe/London",
       source: "DLStreams public schedule",
       events
     });

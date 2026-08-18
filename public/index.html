@@ -3348,7 +3348,7 @@
       const topRatedFull = [...scoped].sort((a, b) => getMediaRating(b) - getMediaRating(a));
       renderRow(
         rowsContainer,
-        "Popular on ShowHub",
+        "Highest Rated on IMDB",
         topRatedFull.slice(0, MAX_ITEMS_PER_ROW),
         topRatedFull,
         { kind: "popular", scope: state.typeScope }

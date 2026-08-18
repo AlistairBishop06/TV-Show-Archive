@@ -2425,6 +2425,7 @@
     const CINEMETA_API = "https://v3-cinemeta.strem.io";
     const HOME_PAGE_BATCH = 1;
     const WATCH_HISTORY_KEY = "showhub-watch-history-v2";
+    const PENDING_WATCH_HISTORY_KEY_PREFIX = "showhub-pending-watch-progress-v1";
     const AUTH_TOKEN_KEY = "showhub-auth-token-v1";
     const LEGACY_WATCH_HISTORY_KEY = "showhub-watch-history-v1";
     const MAX_WATCH_HISTORY = 40;
@@ -2565,6 +2566,50 @@
 
     function writeLocalWatchHistory(entries) {
       localStorage.setItem(WATCH_HISTORY_KEY, JSON.stringify(normaliseHistoryList(entries)));
+    }
+
+    function getPendingWatchHistoryKey() {
+      return state.user?.id
+        ? `${PENDING_WATCH_HISTORY_KEY_PREFIX}:${state.user.id}`
+        : "";
+    }
+
+    function readPendingWatchHistory() {
+      const key = getPendingWatchHistoryKey();
+      if (!key) return [];
+      try {
+        const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+        return normaliseHistoryList(parsed);
+      } catch {
+        return [];
+      }
+    }
+
+    function writePendingWatchHistory(entries) {
+      const key = getPendingWatchHistoryKey();
+      if (!key) return;
+      const normalised = normaliseHistoryList(entries);
+      if (normalised.length) {
+        localStorage.setItem(key, JSON.stringify(normalised));
+      } else {
+        localStorage.removeItem(key);
+      }
+    }
+
+    function cachePendingWatchEntry(entry) {
+      if (!entry?.imdbId) return;
+      const pending = readPendingWatchHistory();
+      const withoutCurrent = pending.filter(item => item.imdbId !== entry.imdbId);
+      writePendingWatchHistory([entry, ...withoutCurrent]);
+    }
+
+    function clearPendingWatchEntry(imdbId, syncedLastWatched = Infinity) {
+      if (!imdbId) return;
+      const pending = readPendingWatchHistory();
+      const remaining = pending.filter(item =>
+        item.imdbId !== imdbId || Number(item.lastWatched || 0) > Number(syncedLastWatched)
+      );
+      writePendingWatchHistory(remaining);
     }
 
     function getWatchHistory() {
@@ -2713,19 +2758,22 @@
       if (!state.user) return;
       setAccountSyncState("syncing");
 
-      const localEntries = migrateLocal ? readLocalWatchHistory() : [];
+      const legacyEntries = migrateLocal ? readLocalWatchHistory() : [];
+      const pendingEntries = readPendingWatchHistory();
       try {
         const remoteEntries = await loadRemoteWatchHistory();
-        const merged = mergeHistoryLists(remoteEntries, localEntries);
-        state.watchHistory = merged;
+        state.watchHistory = mergeHistoryLists(remoteEntries, legacyEntries, pendingEntries);
         renderContinueWatching();
 
-        if (localEntries.length) {
+        // Only the one-time legacy migration is pushed during account loading.
+        // Pending playback progress remains local until pause, seek, end or exit.
+        if (legacyEntries.length) {
           await apiFetch("/api/watch-history/sync", {
             method: "POST",
-            body: JSON.stringify({ entries: localEntries })
+            body: JSON.stringify({ entries: legacyEntries })
           });
-          state.watchHistory = await loadRemoteWatchHistory();
+          const refreshedRemoteEntries = await loadRemoteWatchHistory();
+          state.watchHistory = mergeHistoryLists(refreshedRemoteEntries, pendingEntries);
           localStorage.removeItem(WATCH_HISTORY_KEY);
           localStorage.removeItem(LEGACY_WATCH_HISTORY_KEY);
           renderContinueWatching();
@@ -2733,6 +2781,7 @@
         setAccountSyncState("idle");
       } catch (error) {
         console.error("Watch history sync failed", error);
+        const localEntries = mergeHistoryLists(legacyEntries, pendingEntries);
         if (localEntries.length) {
           state.watchHistory = mergeHistoryLists(state.watchHistory, localEntries);
           renderContinueWatching();
@@ -2741,14 +2790,17 @@
       }
     }
 
-    async function persistWatchEntryToAccount(entry) {
+    async function persistWatchEntryToAccount(entry, { keepalive = false } = {}) {
       if (!state.user || !entry?.imdbId) return;
+      const syncedLastWatched = Number(entry.lastWatched || 0);
       setAccountSyncState("syncing");
       try {
         await apiFetch(`/api/watch-history/${encodeURIComponent(entry.imdbId)}`, {
           method: "PUT",
-          body: JSON.stringify(entry)
+          body: JSON.stringify(entry),
+          keepalive
         });
+        clearPendingWatchEntry(entry.imdbId, syncedLastWatched);
         setAccountSyncState("idle");
       } catch (error) {
         console.error("Could not sync watch progress", error);
@@ -2911,16 +2963,24 @@
       };
     }
 
-    function saveWatchEntry(entry) {
+    function saveWatchEntry(entry, { syncRemote = false, keepalive = false } = {}) {
       const history = getWatchHistory();
       const withoutCurrentTitle = history.filter(item => item.imdbId !== entry.imdbId);
       setWatchHistory([entry, ...withoutCurrentTitle]);
       renderContinueWatching();
-      if (state.user) persistWatchEntryToAccount(entry);
+
+      // Playback progress is deliberately cached in the browser while watching.
+      // Neon is only touched for explicit checkpoints: pause, seek, end or exit.
+      if (state.user) {
+        cachePendingWatchEntry(entry);
+        if (syncRemote) persistWatchEntryToAccount(entry, { keepalive });
+        else setAccountSyncState("idle", "Progress saved locally");
+      }
     }
 
     function removeWatchEntry(entry) {
       setWatchHistory(getWatchHistory().filter(item => item.imdbId !== entry.imdbId));
+      clearPendingWatchEntry(entry?.imdbId);
       renderContinueWatching();
       if (state.user && entry?.imdbId) {
         setAccountSyncState("syncing");
@@ -2958,7 +3018,18 @@
       }
 
       entry.lastWatched = Date.now();
-      saveWatchEntry(entry);
+      saveWatchEntry(entry, { syncRemote: importantEvent });
+    }
+
+    function syncActivePlaybackOnExit({ keepalive = false } = {}) {
+      if (!state.user || !state.activePlayback) return;
+
+      const imdbId = getImdbId(state.activePlayback.media);
+      const existing = getSavedPlayback(imdbId);
+      if (!existing) return;
+
+      const entry = { ...existing, lastWatched: Date.now() };
+      saveWatchEntry(entry, { syncRemote: true, keepalive });
     }
 
     function isVidFastOrigin(origin) {
@@ -3348,7 +3419,7 @@
       const topRatedFull = [...scoped].sort((a, b) => getMediaRating(b) - getMediaRating(a));
       renderRow(
         rowsContainer,
-        "Highest Rated on IMDB",
+        "Popular on ShowHub",
         topRatedFull.slice(0, MAX_ITEMS_PER_ROW),
         topRatedFull,
         { kind: "popular", scope: state.typeScope }
@@ -4035,6 +4106,7 @@
     }
 
     function closePlayer({ resetRoute = true } = {}) {
+      syncActivePlaybackOnExit();
       playerScreen.classList.remove("open");
       playerScreen.setAttribute("aria-hidden", "true");
       stopPlayerFrame();
@@ -4268,6 +4340,14 @@
 
     window.addEventListener("popstate", () => {
       if (playerScreen.classList.contains("open")) closePlayer({ resetRoute: false });
+    });
+
+    // A normal fetch can be cancelled when the page is torn down. keepalive lets
+    // the final exit checkpoint finish without adding any periodic Neon writes.
+    window.addEventListener("pagehide", () => {
+      if (playerScreen.classList.contains("open")) {
+        syncActivePlaybackOnExit({ keepalive: true });
+      }
     });
 
     document.addEventListener("keydown", event => {

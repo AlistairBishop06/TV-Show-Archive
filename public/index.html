@@ -2240,6 +2240,171 @@
       .auth-modal { padding: 30px 22px 24px; }
     }
 
+  
+
+    /* ---- Live Sports ---- */
+    .live-sports-section {
+      padding: 18px 0 44px;
+    }
+
+    .live-sports-heading {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin: 4px 0 30px;
+    }
+
+    .live-sports-heading h1 {
+      margin: 7px 0 8px;
+      font-size: clamp(30px, 4vw, 48px);
+      line-height: 1;
+      letter-spacing: -1.5px;
+    }
+
+    .live-sports-heading p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .live-sports-group {
+      margin: 0 0 34px;
+    }
+
+    .live-sports-group-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    .live-sports-group-head h2 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: -.35px;
+    }
+
+    .live-sports-group-head small {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .live-channel-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 13px;
+    }
+
+    .live-channel-card {
+      appearance: none;
+      width: 100%;
+      min-height: 128px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: linear-gradient(145deg, rgba(22,27,39,.98), rgba(12,15,23,.98));
+      color: var(--text);
+      padding: 17px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 22px;
+      text-align: left;
+      cursor: pointer;
+      box-shadow: 0 12px 28px rgba(0,0,0,.16);
+      transition: transform .18s ease, border-color .18s ease, background .18s ease;
+    }
+
+    .live-channel-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255,255,255,.22);
+      background: linear-gradient(145deg, rgba(28,34,49,.99), rgba(15,18,28,.99));
+    }
+
+    .live-channel-card:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
+
+    .live-channel-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .live-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .9px;
+      text-transform: uppercase;
+    }
+
+    .live-badge::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #ff365b;
+      box-shadow: 0 0 0 4px rgba(255,54,91,.13);
+    }
+
+    .live-channel-id {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .live-channel-name {
+      font-size: 16px;
+      font-weight: 800;
+      line-height: 1.25;
+      letter-spacing: -.2px;
+    }
+
+    .live-channel-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .live-channel-watch {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .live-sports-empty {
+      padding: 30px 0;
+      color: var(--muted);
+    }
+
+    @media (max-width: 620px) {
+      .live-channel-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .live-channel-card {
+        min-height: 120px;
+        padding: 14px;
+      }
+      .live-channel-name { font-size: 14px; }
+    }
+
+    @media (max-width: 420px) {
+      .live-channel-grid { grid-template-columns: 1fr; }
+    }
+
   </style>
 </head>
 <body>
@@ -2251,6 +2416,7 @@
         <button data-type="all" class="active" type="button">All</button>
         <button data-type="tv" type="button">TV Shows</button>
         <button data-type="movie" type="button">Movies</button>
+        <button data-type="live" type="button">Live Sports</button>
       </div>
 
       <div class="search">
@@ -2298,6 +2464,17 @@
         </div>
       </div>
       <div id="continueRow" class="continue-row"></div>
+    </section>
+
+    <section id="liveSportsSection" class="live-sports-section" style="display:none">
+      <div class="live-sports-heading">
+        <div>
+          <div class="eyebrow">Live now</div>
+          <h1>Live Sports</h1>
+          <p>Watch Sky Sports channels live without leaving ShowHub.</p>
+        </div>
+      </div>
+      <div id="liveSportsContent"></div>
     </section>
 
     <!-- Netflix/Prime-style browsing: rows of titles grouped by genre -->
@@ -2432,6 +2609,51 @@
     const MIN_ITEMS_PER_GENRE_ROW = 5;
     const MAX_GENRE_ROWS = 12;
     const MAX_ITEMS_PER_ROW = 20;
+    const LIVE_STREAM_BASE = "https://dlstreams.st/stream/stream-";
+    const LIVE_SPORTS_CHANNELS = [
+      { name: "Sky Sports Football UK", id: 35, region: "United Kingdom" },
+      { name: "Sky Sports+ Plus", id: 36, region: "United Kingdom" },
+      { name: "Sky Sports Action UK", id: 37, region: "United Kingdom" },
+      { name: "Sky Sports Main Event", id: 38, region: "United Kingdom" },
+      { name: "Sky Sports Tennis UK", id: 46, region: "United Kingdom" },
+      { name: "Sky Sports Premier League", id: 130, region: "United Kingdom" },
+      { name: "Sky Sports F1 UK", id: 60, region: "United Kingdom" },
+      { name: "Sky Sports Cricket", id: 65, region: "United Kingdom" },
+      { name: "Sky Sports Golf UK", id: 70, region: "United Kingdom" },
+      { name: "Sky Sports News UK", id: 366, region: "United Kingdom" },
+      { name: "Sky Sports Mix UK", id: 449, region: "United Kingdom" },
+      { name: "Sky Sports Racing UK", id: 554, region: "United Kingdom" },
+
+      { name: "Sky Sports 1 DE", id: 240, region: "Germany & Austria" },
+      { name: "Sky Sports 2 DE", id: 241, region: "Germany & Austria" },
+      { name: "Sky Sport Top Event DE", id: 556, region: "Germany & Austria" },
+      { name: "Sky Sport Mix DE", id: 557, region: "Germany & Austria" },
+      { name: "Sky Sport Bundesliga 1 HD", id: 558, region: "Germany & Austria" },
+      { name: "Sky Sport Austria 1 HD", id: 559, region: "Germany & Austria" },
+      { name: "Sky Sport Bundesliga 2", id: 946, region: "Germany & Austria" },
+      { name: "Sky Sport Bundesliga 3", id: 947, region: "Germany & Austria" },
+      { name: "Sky Sport Bundesliga 4", id: 948, region: "Germany & Austria" },
+      { name: "Sky Sport Bundesliga 5", id: 949, region: "Germany & Austria" },
+
+      { name: "Sky Sports Golf Italy", id: 574, region: "Italy" },
+      { name: "Sky Sport MotoGP Italy", id: 575, region: "Italy" },
+      { name: "Sky Sport Tennis Italy", id: 576, region: "Italy" },
+      { name: "Sky Sport F1 Italy", id: 577, region: "Italy" },
+      { name: "Sky Sport Max Italy", id: 460, region: "Italy" },
+      { name: "Sky Sport Uno Italy", id: 461, region: "Italy" },
+      { name: "Sky Sport Arena Italy", id: 462, region: "Italy" },
+
+      { name: "Sky Sport Select NZ", id: 587, region: "New Zealand" },
+      { name: "Sky Sport 1 NZ", id: 588, region: "New Zealand" },
+      { name: "Sky Sport 2 NZ", id: 589, region: "New Zealand" },
+      { name: "Sky Sport 3 NZ", id: 590, region: "New Zealand" },
+      { name: "Sky Sport 4 NZ", id: 591, region: "New Zealand" },
+      { name: "Sky Sport 5 NZ", id: 592, region: "New Zealand" },
+      { name: "Sky Sport 6 NZ", id: 593, region: "New Zealand" },
+      { name: "Sky Sport 7 NZ", id: 594, region: "New Zealand" },
+      { name: "Sky Sport 8 NZ", id: 595, region: "New Zealand" },
+      { name: "Sky Sport 9 NZ", id: 596, region: "New Zealand" }
+    ];
 
     // Every icon in the app is rendered from this shared set so glyphs are
     // always the same 18x18 size, instead of relying on font-dependent
@@ -2510,6 +2732,8 @@
     const catalogueActions = el("catalogueActions");
     const continueSection = el("continueSection");
     const continueRow = el("continueRow");
+    const liveSportsSection = el("liveSportsSection");
+    const liveSportsContent = el("liveSportsContent");
     const accountButton = el("accountButton");
     const accountAvatar = el("accountAvatar");
     const accountLabel = el("accountLabel");
@@ -3574,6 +3798,11 @@
     }
 
     function renderCatalogue() {
+      if (state.typeScope === "live") {
+        showLiveSportsView(searchInput.value);
+        return;
+      }
+      hideLiveSportsView();
       if (state.searchTerm || state.activeCollection) return; // handled separately
       renderRows();
       updateCatalogueControls();
@@ -3745,6 +3974,13 @@
 
     async function searchCatalogue(query) {
       const term = query.trim();
+
+      if (state.typeScope === "live") {
+        showLiveSportsView(term);
+        return;
+      }
+
+      hideLiveSportsView();
       state.searchTerm = term;
 
       if (!term) {
@@ -3802,6 +4038,137 @@
         console.error(error);
         searchGrid.innerHTML = `<div class="status-card">Search failed. Try again.</div>`;
       }
+    }
+
+
+    function liveChannelMarkup(channel) {
+      return `
+        <button class="live-channel-card" type="button" data-live-channel-id="${channel.id}"
+          aria-label="Watch ${escapeHtml(channel.name)} live">
+          <div class="live-channel-top">
+            <span class="live-badge">Live</span>
+            <span class="live-channel-id">ID ${channel.id}</span>
+          </div>
+          <div class="live-channel-name">${escapeHtml(channel.name)}</div>
+          <div class="live-channel-bottom">
+            <span>${escapeHtml(channel.region)}</span>
+            <span class="live-channel-watch">${ICONS.play}Watch</span>
+          </div>
+        </button>
+      `;
+    }
+
+    function renderLiveSports(query = "") {
+      const term = String(query || "").trim().toLowerCase();
+      const channels = term
+        ? LIVE_SPORTS_CHANNELS.filter(channel =>
+            channel.name.toLowerCase().includes(term) ||
+            channel.region.toLowerCase().includes(term) ||
+            String(channel.id).includes(term)
+          )
+        : LIVE_SPORTS_CHANNELS;
+
+      if (!channels.length) {
+        liveSportsContent.innerHTML = `<div class="live-sports-empty">No live channels match "${escapeHtml(query)}".</div>`;
+        return;
+      }
+
+      const regions = [...new Set(channels.map(channel => channel.region))];
+      liveSportsContent.innerHTML = regions.map(region => {
+        const regionChannels = channels.filter(channel => channel.region === region);
+        return `
+          <section class="live-sports-group">
+            <div class="live-sports-group-head">
+              <h2>${escapeHtml(region)}</h2>
+              <small>${regionChannels.length} channel${regionChannels.length === 1 ? "" : "s"}</small>
+            </div>
+            <div class="live-channel-grid">
+              ${regionChannels.map(liveChannelMarkup).join("")}
+            </div>
+          </section>
+        `;
+      }).join("");
+
+      liveSportsContent.querySelectorAll("[data-live-channel-id]").forEach(button => {
+        button.addEventListener("click", () => {
+          const channel = LIVE_SPORTS_CHANNELS.find(item =>
+            String(item.id) === String(button.dataset.liveChannelId)
+          );
+          if (channel) openLiveSportsChannel(channel);
+        });
+      });
+    }
+
+    function showLiveSportsView(query = searchInput.value) {
+      state.activeCollection = null;
+      state.searchTerm = String(query || "").trim();
+      collectionSection.style.display = "none";
+      collectionActions.style.display = "none";
+      searchResultsSection.style.display = "none";
+      rowsContainer.style.display = "none";
+      heroSection.style.display = "none";
+      continueSection.style.display = "none";
+      catalogueActions.style.display = "none";
+      liveSportsSection.style.display = "block";
+      searchInput.placeholder = "Search live sports channels...";
+      renderLiveSports(query);
+    }
+
+    function hideLiveSportsView() {
+      liveSportsSection.style.display = "none";
+      continueSection.style.display = "";
+      searchInput.placeholder = "Search movies and TV shows...";
+
+      // Live Sports hides the normal catalogue surfaces. Restore whichever
+      // catalogue view should be visible when leaving that tab. Without this,
+      // the rows and hero remain display:none, leaving only Continue Watching.
+      if (state.typeScope === "live") return;
+
+      if (state.activeCollection) {
+        collectionSection.style.display = "block";
+        searchResultsSection.style.display = "none";
+        rowsContainer.style.display = "none";
+        heroSection.style.display = "none";
+        return;
+      }
+
+      if (state.searchTerm) {
+        collectionSection.style.display = "none";
+        searchResultsSection.style.display = "block";
+        rowsContainer.style.display = "none";
+        heroSection.style.display = "none";
+        return;
+      }
+
+      collectionSection.style.display = "none";
+      searchResultsSection.style.display = "none";
+      rowsContainer.style.display = "";
+      heroSection.style.display = state.heroMedia ? "block" : "none";
+    }
+
+    function openLiveSportsChannel(channel) {
+      if (!requireSignedInForPlayback()) return;
+
+      closeModal();
+      // Live streams have no resume position, so they never enter watch history
+      // and never create Neon progress writes.
+      state.activePlayback = null;
+      state.pendingEpisodeAdvance = false;
+      state.episodeAdvanceInFlight = false;
+
+      playerTitle.textContent = channel.name;
+      playerSubtitle.textContent = `Live · ${channel.region}`;
+      document.title = `${channel.name} | ShowHub`;
+      playerFrame.src = `${LIVE_STREAM_BASE}${encodeURIComponent(channel.id)}.php`;
+      playerScreen.classList.add("open");
+      playerScreen.setAttribute("aria-hidden", "false");
+      document.body.style.overflow = "hidden";
+
+      history.pushState(
+        { player: true, mediaType: "live", channelId: channel.id, title: channel.name },
+        "",
+        `#live=${encodeURIComponent(channel.id)}`
+      );
     }
 
     function requireSignedInForPlayback() {
@@ -4119,7 +4486,7 @@
       // Do not depend on history.back(): if another #watch entry is underneath
       // the current one, the app can return to the menu while leaving the watch
       // URL active. Explicitly restore the ShowHub route instead.
-      if (resetRoute && location.hash.startsWith("#watch=")) {
+      if (resetRoute && (location.hash.startsWith("#watch=") || location.hash.startsWith("#live="))) {
         history.replaceState(
           { player: false },
           "",
@@ -4234,6 +4601,13 @@
         btn.classList.toggle("active", btn === button)
       );
 
+      if (state.typeScope === "live") {
+        showLiveSportsView(searchInput.value);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+
+      hideLiveSportsView();
       if (state.searchTerm) {
         searchCatalogue(searchInput.value);
       } else {

@@ -22,10 +22,9 @@ const authAttempts = new Map();
 const liveSportsScheduleCache = new Map();
 const LIVE_SPORTS_SCHEDULE_CACHE_MS = 10 * 60 * 1000;
 const DLSTREAMS_PUBLIC_SCHEDULE_URLS = [
-  "https://dlstreams.st/schedule",
   "https://dlstreams.st/",
-  "https://dlhd.st/schedule",
-  "https://dlhd.st/"
+  "https://dlhd.st/",
+  "https://dlhd.dad/"
 ];
 
 app.set("trust proxy", 1);
@@ -343,6 +342,13 @@ function scheduleClockValue(...values) {
   return "";
 }
 
+function addScheduleEvent(days, date, event) {
+  if (!date || !event?.time || !event?.title || !Array.isArray(event.channels) || !event.channels.length) return;
+  const events = days.get(date) || [];
+  events.push(event);
+  days.set(date, events);
+}
+
 function parseDlstreamsScheduleHtml(html) {
   const $ = cheerio.load(String(html || ""));
   const scheduleRoot = $("div.schedule").first();
@@ -350,7 +356,7 @@ function parseDlstreamsScheduleHtml(html) {
     ? scheduleRoot.find("div.schedule__day")
     : $("div.schedule__day");
 
-  if (!dayNodes.length) throw new Error("DLStreams schedule days were not found.");
+  if (!dayNodes.length) throw new Error("DLStreams schedule days were not found in the HTML response.");
 
   const days = new Map();
   dayNodes.each((_dayIndex, dayElement) => {
@@ -363,7 +369,6 @@ function parseDlstreamsScheduleHtml(html) {
     const date = scheduleDateKey(dayLabel);
     if (!date) return;
 
-    const events = [];
     const categories = day.find("div.schedule__category");
     const categoryNodes = categories.length ? categories.toArray() : [dayElement];
 
@@ -372,7 +377,7 @@ function parseDlstreamsScheduleHtml(html) {
       const categoryName = cleanText(
         category.find(".schedule__catHeader .card__meta, .schedule__catHeader, .schedule__categoryTitle").first().text(),
         160
-      );
+      ) || "Other";
 
       category.find("div.schedule__event").each((_eventIndex, eventElement) => {
         const event = $(eventElement);
@@ -413,15 +418,10 @@ function parseDlstreamsScheduleHtml(html) {
           });
         };
 
-        addLinks(event.find(
-          ".schedule__channels a, .schedule__channels--alternate a, .schedule__channelsAlt a"
-        ));
-        if (!channels.length) {
-          addLinks(event.find('a[href*="watch.php"], a[href*="stream-"]'));
-        }
+        addLinks(event.find("a[href*='id='], a[href*='stream-']"));
         if (!channels.length) return;
 
-        events.push({
+        addScheduleEvent(days, date, {
           time,
           title,
           category: categoryName,
@@ -429,51 +429,205 @@ function parseDlstreamsScheduleHtml(html) {
         });
       });
     });
-
-    if (events.length) {
-      const existing = days.get(date) || [];
-      days.set(date, [...existing, ...events]);
-    }
   });
 
-  if (!days.size) throw new Error("No DLStreams schedule data was found.");
+  if (!days.size) throw new Error("No playable DLStreams schedule data was found in the HTML response.");
   return days;
 }
 
+function decodeScheduleText(value) {
+  const raw = String(value || "");
+  if (!raw.includes("&")) return raw;
+  return cheerio.load(`<span>${raw}</span>`)("span").text();
+}
+
+function readerLineLinks(line) {
+  const channels = [];
+  const text = String(line || "");
+  const markdownLink = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  let match;
+  while ((match = markdownLink.exec(text))) {
+    const id = normaliseScheduleChannelId(match[2]);
+    const name = cleanText(decodeScheduleText(match[1]).replace(/\\([\[\]_*])/g, "$1"), 200);
+    if (!id || !name) continue;
+    if (!channels.some(channel => channel.id === id)) channels.push({ id, name });
+  }
+  return channels;
+}
+
+function cleanReaderLine(line) {
+  return decodeScheduleText(String(line || ""))
+    .replace(/^\s{0,3}#{1,6}\s*/, "")
+    .replace(/^[-*]\s+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isReaderNoiseLine(line) {
+  const lower = String(line || "").toLowerCase();
+  if (!lower) return true;
+  return lower === "schedule" ||
+    lower.startsWith("title:") ||
+    lower.startsWith("url source:") ||
+    lower.startsWith("published time:") ||
+    lower.startsWith("markdown content:") ||
+    lower.startsWith("search events or channels") ||
+    lower === "select" ||
+    lower === "all" ||
+    lower === "preparing schedule…" ||
+    lower === "preparing schedule..." ||
+    lower.startsWith("extra schedule") ||
+    lower.startsWith("extra ppv") ||
+    lower.startsWith("extra backup") ||
+    lower.startsWith("extra sd stream");
+}
+
+function parseDlstreamsReaderText(payload) {
+  const lines = String(payload || "").replace(/\r/g, "").split("\n");
+  const days = new Map();
+  let currentDate = "";
+  let currentCategory = "Other";
+  let pendingEvent = null;
+
+  const flushEvent = () => {
+    if (pendingEvent && pendingEvent.channels.length) {
+      addScheduleEvent(days, currentDate, pendingEvent);
+    }
+    pendingEvent = null;
+  };
+
+  for (const rawLine of lines) {
+    const visible = cleanReaderLine(rawLine);
+    if (!visible) continue;
+
+    const date = scheduleDateKey(visible);
+    if (date && /schedule\s*time|schedule/i.test(visible)) {
+      flushEvent();
+      currentDate = date;
+      currentCategory = "Other";
+      continue;
+    }
+    if (!currentDate) continue;
+
+    const time = scheduleClockValue(visible);
+    const eventMatch = visible.match(/^([01]?\d|2[0-3]):([0-5]\d)\s+(.+)$/);
+    if (time && eventMatch) {
+      flushEvent();
+      const title = cleanText(eventMatch[3], 500);
+      if (!title) continue;
+      pendingEvent = {
+        time,
+        title,
+        category: currentCategory || "Other",
+        channels: []
+      };
+      const sameLineChannels = readerLineLinks(rawLine);
+      sameLineChannels.forEach(channel => {
+        if (!pendingEvent.channels.some(existing => existing.id === channel.id)) pendingEvent.channels.push(channel);
+      });
+      continue;
+    }
+
+    const links = readerLineLinks(rawLine);
+    if (pendingEvent && links.length) {
+      links.forEach(channel => {
+        if (!pendingEvent.channels.some(existing => existing.id === channel.id)) pendingEvent.channels.push(channel);
+      });
+      continue;
+    }
+
+    if (isReaderNoiseLine(visible)) continue;
+
+    // Category labels on the public page sit between groups of events. Once
+    // an event has received its channel links, the next plain line is the next
+    // category heading.
+    if (pendingEvent?.channels?.length) {
+      flushEvent();
+    }
+
+    if (!pendingEvent && visible.length <= 120 && !/^https?:\/\//i.test(visible)) {
+      currentCategory = cleanText(visible, 160) || "Other";
+    }
+  }
+
+  flushEvent();
+  if (!days.size) throw new Error("No playable schedule entries were found in the public reader response.");
+  return days;
+}
+
+async function fetchScheduleResponse(url, options = {}) {
+  const response = await fetch(url, {
+    redirect: "follow",
+    signal: AbortSignal.timeout(options.timeout || 15000),
+    headers: options.headers || {}
+  });
+  if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}.`);
+  return response.text();
+}
+
 async function fetchDlstreamsPublicSchedule() {
-  const cacheKey = "dlstreams:public-schedule";
+  const cacheKey = "dlstreams:public-schedule-v2";
   const cached = liveSportsScheduleCache.get(cacheKey);
   if (cached && Date.now() - cached.savedAt < LIVE_SPORTS_SCHEDULE_CACHE_MS) {
     return cached.days;
   }
 
-  let lastError = null;
+  const errors = [];
+
+  // First try the public pages directly. This is fastest when the upstream is
+  // not presenting an anti-bot page to Vercel.
   for (const url of DLSTREAMS_PUBLIC_SCHEDULE_URLS) {
     try {
-      const response = await fetch(url, {
+      const payload = await fetchScheduleResponse(url, {
+        timeout: 12000,
         headers: {
           Accept: "text/html,application/xhtml+xml",
           "Accept-Language": "en-GB,en;q=0.9",
           Referer: "https://dlstreams.st/",
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
-        },
-        redirect: "follow",
-        signal: AbortSignal.timeout(10000)
+        }
       });
-      if (!response.ok) {
-        lastError = new Error(`DLStreams schedule returned HTTP ${response.status}.`);
-        continue;
-      }
-      const payload = await response.text();
       const days = parseDlstreamsScheduleHtml(payload);
       liveSportsScheduleCache.set(cacheKey, { savedAt: Date.now(), days });
       return days;
     } catch (error) {
-      lastError = error;
+      errors.push(`direct ${url}: ${error?.message || error}`);
     }
   }
 
-  const error = new Error(lastError?.message || "Unable to load the DLStreams public schedule.");
+  // DLStreams/DLHD periodically blocks datacentre HTTP clients even though the
+  // public homepage is visible in a normal browser. Jina Reader is a public,
+  // no-key browser reader, so use it only as a fallback to read that same
+  // public schedule page. The response keeps the channel links and therefore
+  // their numeric stream IDs.
+  const readerTargets = [
+    "https://dlstreams.st/",
+    "https://dlhd.st/",
+    "https://dlhd.dad/"
+  ];
+
+  for (const target of readerTargets) {
+    const readerUrl = `https://r.jina.ai/${target}`;
+    try {
+      const payload = await fetchScheduleResponse(readerUrl, {
+        timeout: 25000,
+        headers: {
+          Accept: "text/plain,text/markdown;q=0.9,*/*;q=0.8",
+          "X-No-Cache": "true",
+          "X-Engine": "browser",
+          "X-Timeout": "18"
+        }
+      });
+      const days = parseDlstreamsReaderText(payload);
+      liveSportsScheduleCache.set(cacheKey, { savedAt: Date.now(), days });
+      return days;
+    } catch (error) {
+      errors.push(`reader ${target}: ${error?.message || error}`);
+    }
+  }
+
+  console.error("Live sports schedule sources failed", errors);
+  const error = new Error("The live sports schedule source is temporarily unavailable.");
   error.status = 502;
   throw error;
 }
@@ -485,7 +639,7 @@ function liveScheduleEventsForDate(days, date, allowedIds = null) {
 
   return requested
     .map(event => {
-      const channels = event.channels.filter(channel => !allowed || allowed.has(String(channel.id)));
+      const channels = (event.channels || []).filter(channel => !allowed || allowed.has(String(channel.id)));
       if (!channels.length) return null;
       return {
         time: event.time,
@@ -606,17 +760,17 @@ app.get("/api/live-sports/schedule", async (req, res, next) => {
       return res.status(400).json({ error: "Use a date in YYYY-MM-DD format." });
     }
 
-    const requestedIds = String(req.query.ids || "")
-      .split(",")
-      .map(value => value.trim())
-      .filter(value => /^\d+$/.test(value));
-    const allowedIds = requestedIds.length ? new Set(requestedIds) : null;
-
     const days = await fetchDlstreamsPublicSchedule();
-    const events = liveScheduleEventsForDate(days, requestedDate, allowedIds);
+    const availableDates = [...days.keys()].sort();
+    const selectedDate = days.has(requestedDate)
+      ? requestedDate
+      : (availableDates.length === 1 ? availableDates[0] : requestedDate);
+    const events = liveScheduleEventsForDate(days, selectedDate);
     res.setHeader("Cache-Control", "public, max-age=120, s-maxage=600, stale-while-revalidate=300");
     res.json({
-      date: requestedDate,
+      date: selectedDate,
+      requestedDate,
+      availableDates,
       timezone: "UK GMT",
       source: "DLStreams public schedule",
       events

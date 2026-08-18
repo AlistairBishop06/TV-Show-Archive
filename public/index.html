@@ -2891,7 +2891,7 @@
         <div>
           <div class="eyebrow">Live schedule</div>
           <h1>Live Sports</h1>
-          <p>See what is on, when it starts, and jump straight into the matching Sky Sports stream.</p>
+          <p>See every upcoming event across all sports and jump straight into the stream carrying it.</p>
         </div>
       </div>
       <div id="liveSportsContent"></div>
@@ -4517,6 +4517,22 @@
       return LIVE_SPORTS_CHANNELS.find(channel => String(channel.id) === String(id)) || null;
     }
 
+    function liveScheduleChannelById(id) {
+      const known = liveChannelById(id);
+      if (known) return known;
+      for (const event of state.liveSportsScheduleEvents || []) {
+        const channel = (event.channels || []).find(item => String(item.id) === String(id));
+        if (channel) {
+          return {
+            id: String(channel.id),
+            name: String(channel.name || `Live channel ${channel.id}`),
+            region: "Live Sports"
+          };
+        }
+      }
+      return null;
+    }
+
     function formatLiveGuideDate(dateKey) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey || ""))) return "Live schedule";
       const [year, month, day] = dateKey.split("-").map(Number);
@@ -4546,8 +4562,11 @@
 
     function liveEventMarkup(event, index) {
       const playableChannels = (event.channels || [])
-        .map(channel => liveChannelById(channel.id))
-        .filter(Boolean);
+        .filter(channel => /^\d+$/.test(String(channel?.id || "")))
+        .map(channel => ({
+          id: String(channel.id),
+          name: String(channel.name || `Live channel ${channel.id}`)
+        }));
       if (!playableChannels.length) return "";
 
       const primary = playableChannels[0];
@@ -4595,7 +4614,7 @@
 
       let scheduleBody = "";
       if (state.liveSportsScheduleLoading && !dateMatches) {
-        scheduleBody = `<div class="live-guide-status"><div class="spinner"></div><span>Loading live schedule…</span></div>`;
+        scheduleBody = `<div class="live-guide-status"><div class="spinner"></div><span>Loading all live events…</span></div>`;
       } else if (state.liveSportsScheduleError) {
         scheduleBody = `
           <div class="live-guide-status live-guide-error">
@@ -4605,8 +4624,8 @@
           </div>`;
       } else if (!events.length) {
         const message = allEvents.length
-          ? "No matches or channels in the schedule match your filters."
-          : "No Sky Sports events were returned for this date.";
+          ? "No live events match your current filters."
+          : "No live events were returned for this date.";
         scheduleBody = `<div class="live-guide-status">${escapeHtml(message)}</div>`;
       } else {
         const grouped = new Map();
@@ -4654,7 +4673,7 @@
             <div>
               <div class="eyebrow">Schedule time UK GMT</div>
               <h2>${escapeHtml(formatLiveGuideDate(requestedDate))}</h2>
-              <p>Click an event to open the first available Sky Sports stream, or choose a channel underneath it.</p>
+              <p>All sports from the DLStreams schedule. Click any event to open its primary stream, or choose a specific channel underneath.</p>
             </div>
             <div class="live-guide-day-tabs" aria-label="Schedule day">
               <button type="button" data-live-day="0" class="${state.liveScheduleOffset === 0 ? "active" : ""}">Today</button>
@@ -4670,7 +4689,7 @@
           <div class="live-directory-head">
             <div>
               <div class="eyebrow">24/7 channels</div>
-              <h2>All Sky Sports channels</h2>
+              <h2>Sky Sports channels</h2>
             </div>
             <small>Open a channel directly at any time</small>
           </div>
@@ -4699,7 +4718,7 @@
 
       liveSportsContent.querySelectorAll("[data-live-event-primary-id]").forEach(card => {
         const openPrimary = () => {
-          const channel = liveChannelById(card.dataset.liveEventPrimaryId);
+          const channel = liveScheduleChannelById(card.dataset.liveEventPrimaryId);
           if (channel) openLiveSportsChannel(channel);
         };
         card.addEventListener("click", event => {
@@ -4717,7 +4736,7 @@
       liveSportsContent.querySelectorAll("[data-live-event-channel-id]").forEach(button => {
         button.addEventListener("click", event => {
           event.stopPropagation();
-          const channel = liveChannelById(button.dataset.liveEventChannelId);
+          const channel = liveScheduleChannelById(button.dataset.liveEventChannelId);
           if (channel) openLiveSportsChannel(channel);
         });
       });
@@ -4751,9 +4770,8 @@
       renderLiveSports(searchInput.value);
 
       try {
-        const ids = LIVE_SPORTS_CHANNELS.map(channel => channel.id).join(",");
         const data = await apiFetch(
-          `/api/live-sports/schedule?date=${encodeURIComponent(date)}&ids=${encodeURIComponent(ids)}`
+          `/api/live-sports/schedule?date=${encodeURIComponent(date)}`
         );
         if (requestId !== state.liveSportsScheduleRequest) return;
 
@@ -4763,8 +4781,15 @@
           time: String(event.time || "").match(/\b\d{1,2}:\d{2}\b/)?.[0]?.padStart(5, "0") || "--:--",
           title: String(event.title || "Untitled event"),
           category: String(event.category || "Other"),
-          channels: Array.isArray(event.channels) ? event.channels : []
-        }));
+          channels: Array.isArray(event.channels)
+            ? event.channels
+                .map(channel => ({
+                  id: String(channel?.id || ""),
+                  name: String(channel?.name || "")
+                }))
+                .filter(channel => /^\d+$/.test(channel.id) && channel.name)
+            : []
+        })).filter(event => event.channels.length);
         state.liveSportsScheduleError = "";
       } catch (error) {
         console.error("Live sports schedule failed", error);

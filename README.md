@@ -1,299 +1,142 @@
-# ShowHub
+# ShowHub + Neon username accounts and cross-device watch history
 
-A lightweight, browser-based movie and TV catalogue with search, filtering, episode browsing, embedded playback and local watch-progress tracking.
+This version turns the ShowHub template into a small full-stack Node app. The browser UI still contains the streaming catalogue/player experience, while username/password credentials and watch progress go through a server API that talks to Neon Postgres. Playback URLs are only returned to authenticated sessions.
 
-ShowHub is built entirely with **HTML, CSS and vanilla JavaScript**. There is no framework, package manager, database or build step — open the page and the app loads its catalogue dynamically from public metadata services.
+## What was added
 
-## Features
+- Create account with username and password
+- Sign in / sign out with username + password
+- 30-day server-side sessions using an HttpOnly cookie
+- Password hashing with Node's `scrypt`
+- Session tokens are random and only their SHA-256 hashes are stored in Postgres
+- Account menu and sync status in the ShowHub header
+- `Currently Watching` stored per user in Neon
+- Progress updates sync while playback is running
+- Playback is blocked until the user signs in
+- The playable embed URL is returned only by an authenticated server API
+- Removing a title from `Currently Watching` removes it from the account database
+- Existing localStorage watch history is merged into the user's account on first sign-in
+- Returning on another device downloads that account's watch history and resume position
+- Database tables/indexes are created automatically when the server starts
 
-- **Movies and TV shows in one catalogue**
-- **Live search** across both media types
-- **Detailed filtering** by:
-  - media type
-  - genre
-  - runtime
-  - episode count
-  - season count
-  - release year
-  - minimum rating
-  - TV status
-- **Multiple sorting options**, including rating, release year, title, runtime and episode count
-- **TV season and episode browser**
-- **Embedded movie and episode playback**
-- **Continue Watching** section with saved playback position
-- **Automatic resume** from the previous watch position
-- **Local watch history** stored entirely in the browser
-- **Metadata caching** to reduce unnecessary API requests
-- **Background metadata preloading** for faster filtering
-- **Responsive interface** for desktop and mobile
-- **Keyboard-accessible cards and controls**
-- **Lazy-loaded poster artwork**
-- **No account or backend required**
+## Project structure
 
-## How It Works
-
-ShowHub combines multiple services to build the catalogue and playback experience:
-
-| Service | Purpose |
-| --- | --- |
-| [TVMaze](https://www.tvmaze.com/api) | TV catalogue, search, show metadata and episode information |
-| [Cinemeta](https://v3-cinemeta.strem.io/) | Movie catalogue, movie search and additional movie/series metadata |
-| [VidFast](https://vidfast.vc/) | Embedded movie and TV playback |
-| Browser `localStorage` | Watch history, playback progress and cached metadata |
-
-The application loads TV shows and films independently, normalises them into a shared catalogue format, then renders them through the same search, filter and sorting interface.
-
-## Getting Started
-
-### 1. Clone the repository
-
-```bash
-git clone <your-repository-url>
-cd <your-repository-folder>
+```text
+showhub-neon-account-sync/
+├── public/
+│   └── index.html
+├── server.mjs
+├── schema.sql
+├── package.json
+├── .env.example
+└── README.md
 ```
 
-### 2. Open the app
+## 1. Create a Neon database
 
-Because ShowHub has no build process, you can open the HTML file directly in a browser.
+Create a Neon project/database and copy its **pooled connection string** from the Neon dashboard. It looks similar to:
 
-For the most reliable behaviour, serve it through a small local HTTP server:
+```text
+postgresql://USER:PASSWORD@YOUR-ENDPOINT-pooler.REGION.aws.neon.tech/DBNAME?sslmode=require
+```
+
+Do not put this value in `public/index.html` or any browser JavaScript.
+
+## 2. Configure the app
+
+Requires Node.js 20 or newer.
 
 ```bash
-python -m http.server 8000
+npm install
+cp .env.example .env
+```
+
+Edit `.env` and set only your Neon connection string:
+
+```env
+DATABASE_URL=your_neon_connection_string
+```
+
+No other environment variables are required. ShowHub always runs on port `3000`, derives same-origin checks from the incoming request, and automatically marks session cookies `Secure` when served over HTTPS.
+
+## 3. Run it
+
+Development (reads `.env` automatically):
+
+```bash
+npm run dev
 ```
 
 Then open:
 
 ```text
-http://localhost:8000
+http://localhost:3000
 ```
 
-You can also use any static hosting service such as GitHub Pages, Netlify or Vercel.
+For a production host where environment variables are configured by the platform:
 
-## Project Structure
+```bash
+npm start
+```
 
-The current version is intentionally self-contained:
+## Database schema
+
+The server automatically creates `users`, `sessions`, and `watch_history` tables. `schema.sql` is included so you can inspect or apply the schema manually if you prefer.
+
+`watch_history` uses `(user_id, imdb_id)` as its primary key. Newer playback updates replace older ones, which prevents an older device/local migration from overwriting more recent progress.
+
+## How cross-device progress works
+
+1. While logged out, ShowHub continues to use the existing localStorage history.
+2. When a user registers/signs in with a username and password, ShowHub downloads their Neon watch history.
+3. Any existing local history is merged by `imdbId` and `lastWatched`, uploaded to Neon, then removed from the generic local history store.
+4. Before playback, the browser requests `/api/playback-url`; the server returns a player URL only for a valid signed-in session.
+5. Playback progress is written to `/api/watch-history/:imdbId` and upserted for the signed-in user.
+6. On another device, signing into the same account loads those rows and rebuilds `Currently Watching` with the saved season, episode, timestamp, poster, and metadata.
+
+## API endpoints
 
 ```text
-.
-├── index.html
-└── README.md
+POST   /api/auth/register
+POST   /api/auth/login
+POST   /api/auth/logout
+GET    /api/auth/me
+
+GET    /api/playback-url        # requires sign-in
+GET    /api/watch-history
+PUT    /api/watch-history/:imdbId
+POST   /api/watch-history/sync
+DELETE /api/watch-history/:imdbId
+
+GET    /api/health
 ```
 
-`index.html` contains the complete application:
+## Production notes
 
-- page structure
-- responsive styling
-- catalogue state
-- API integration
-- search and filters
-- metadata caching
-- watch history
-- episode selection
-- player integration
+- Serve the app over HTTPS in production; ShowHub automatically marks the session cookie `Secure` on HTTPS requests.
+- Keep `DATABASE_URL` only in your hosting provider's server-side environment variables.
+- The included auth throttling is in-memory and is suitable as a basic safeguard for one app process. At larger scale, use a shared rate limiter (for example Redis/provider rate limiting).
+- This username/password version intentionally has no email address, so there is no email-based password recovery. Add an account recovery mechanism and MFA before treating the identity system as production-complete.
 
-This makes the project easy to deploy as a static site and simple to experiment with.
+## Quick database check
 
-## Catalogue
+Once the app is running, opening `/api/health` should return JSON similar to:
 
-On startup, ShowHub fetches:
-
-- paginated TV shows from TVMaze
-- top movies from Cinemeta
-
-The two sources are combined into a single catalogue.
-
-Additional pages can be fetched using the **Load more titles** button.
-
-Only titles with the identifiers required for playback are added to the playable catalogue.
-
-## Search
-
-Search requests are sent to both the TV and movie sources and the results are merged into one list.
-
-The search input is debounced so requests are not sent on every individual keystroke.
-
-Clearing the search returns the user to the currently loaded catalogue.
-
-## Filters
-
-ShowHub supports the following filters:
-
-| Filter | Options |
-| --- | --- |
-| Type | Movies & TV, TV only, movies only |
-| Genre | Dynamically generated from loaded titles |
-| Length | Under 30 min, 30–60 min, 1–2 hours, 2+ hours |
-| Episodes | 1–10, 11–25, 26–50, 51–100, 100+ |
-| Seasons | 1, 2–3, 4–6, 7+ |
-| Release year | 2020s, 2010s, 2000s, 1990s, before 1990 |
-| Minimum rating | 6+, 7+, 8+, 9+ |
-| TV status | Running or ended |
-| Order | Rating, year, title, runtime or episode count |
-
-Episode, season and TV-status filters are automatically disabled when browsing movies only.
-
-Some filters require richer metadata than the initial catalogue response provides. ShowHub fetches and caches that information in the background so the catalogue can remain responsive.
-
-## TV Shows
-
-Selecting a TV series opens a modal containing:
-
-- show artwork
-- show description
-- season selector
-- numbered episode list
-- episode titles
-- quick play button
-
-Episode data is loaded from TVMaze when the show is opened.
-
-Selecting an episode launches it inside ShowHub's full-screen player.
-
-## Movies
-
-Selecting a movie launches it directly in the player.
-
-If the movie has already been watched, ShowHub can resume playback from the previously saved position.
-
-## Continue Watching
-
-Playback progress is stored in the browser using `localStorage`.
-
-Each saved entry can include:
-
-- media type
-- IMDb ID
-- show ID
-- title
-- poster and backdrop
-- season and episode
-- episode name
-- current playback time
-- duration
-- last watched time
-
-The **Currently Watching** row displays recent titles with a progress bar and resume button.
-
-Entries can also be removed directly from the row.
-
-Because this data is local, there is:
-
-- no account system
-- no remote database
-- no cross-device synchronisation
-
-Clearing browser storage will also clear saved watch progress.
-
-## Metadata Caching
-
-ShowHub maintains separate browser caches for TV and movie metadata.
-
-This is used to avoid repeatedly requesting information such as:
-
-- episode counts
-- season counts
-- runtime
-- genres
-- ratings
-- descriptions
-- backdrop artwork
-
-TV metadata uses different cache lifetimes depending on whether a series is still running or has ended.
-
-The app also preloads useful metadata during browser idle time where supported.
-
-## Player Integration
-
-Movies and episodes are opened in an embedded iframe.
-
-For supported player messages, ShowHub listens for playback events and records:
-
-- current playback position
-- duration
-- pause events
-- seek events
-- completion
-
-Progress writes are throttled during normal playback to avoid repeatedly writing to browser storage.
-
-Messages are only accepted from the expected player origin and iframe window.
-
-## Responsive Design
-
-The interface adapts across screen sizes.
-
-On smaller displays:
-
-- the top navigation stacks vertically
-- catalogue filters rearrange into fewer columns
-- the catalogue moves to a two-column layout
-- modal padding is reduced
-- Continue Watching becomes horizontally scrollable
-
-## Technology
-
-```text
-HTML5
-CSS3
-Vanilla JavaScript
-Fetch API
-Browser History API
-localStorage
-TVMaze API
-Cinemeta API
-VidFast embed
+```json
+{
+  "ok": true,
+  "database": true,
+  "now": "..."
+}
 ```
 
-There are **no npm dependencies**.
+If it fails, check `DATABASE_URL` and that your Neon project is active.
 
-## Deployment
 
-Because the project is fully static, deployment only requires hosting the HTML file.
+## Upgrading from the earlier email build
 
-Suitable options include:
+`ensureSchema()` upgrades the old `users` table automatically. It adds `username`, gives any pre-existing row a generated `user_<id>` username, then removes the old `email` and `display_name` columns. New accounts use only username + password. For test accounts created with the old email build, it is usually simplest to create a fresh username account after this upgrade.
 
-- GitHub Pages
-- Netlify
-- Vercel
-- Cloudflare Pages
-- any standard web server
+## Local development origin note
 
-No server-side runtime or environment variables are currently required.
-
-## Privacy
-
-ShowHub does not require an account.
-
-Watch history and metadata caches are stored in the user's own browser through `localStorage`. The app does, however, communicate with external catalogue, metadata and playback services when loading content.
-
-## Content Notice
-
-ShowHub is a catalogue and player interface; it does not itself contain or host movie or television files.
-
-Playback depends on the configured third-party provider. Anyone deploying or modifying the project should ensure that their use of external services and media complies with the applicable licences, terms and laws in their jurisdiction.
-
-## Possible Future Improvements
-
-- user accounts and cross-device watch history
-- favourites and custom watchlists
-- recently added and trending sections
-- dedicated movie detail modal
-- cast and crew information
-- recommendations based on viewing history
-- automatic next-episode playback
-- subtitle and audio controls
-- URL-based deep links for individual titles
-- PWA/offline shell support
-- backend proxy and API caching
-- automated tests
-
-## Contributing
-
-Contributions, bug reports and feature ideas are welcome.
-
-If you want to make a larger change, open an issue first to describe what you plan to add or modify.
-
----
-
-Built as a simple, fast alternative to heavier media catalogue front ends — one page, no framework and no build step.
+Use `http://localhost:3000` (or consistently use `127.0.0.1`) to avoid cookie/origin confusion. Development mode now accepts loopback origins on local ports, but keeping the same hostname is still the most reliable setup.

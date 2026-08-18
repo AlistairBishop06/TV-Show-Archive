@@ -1970,6 +1970,276 @@
       }
     }
 
+
+
+    /* ---- Account + cross-device sync ---- */
+    .account-area {
+      position: relative;
+      flex: 0 0 auto;
+    }
+
+    .account-button {
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 10px 0 6px;
+      border: 1px solid rgba(255,255,255,.09);
+      border-radius: 10px;
+      background: rgba(255,255,255,.045);
+      color: #f4f4f6;
+      cursor: pointer;
+      transition: background .16s ease, border-color .16s ease;
+    }
+
+    .account-button:hover,
+    .account-button[aria-expanded="true"] {
+      background: rgba(255,255,255,.075);
+      border-color: rgba(255,255,255,.15);
+    }
+
+    .account-avatar {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 8px;
+      background: linear-gradient(145deg, rgba(157,140,255,.95), rgba(106,73,241,.95));
+      color: white;
+      font-size: .78rem;
+      font-weight: 850;
+      text-transform: uppercase;
+    }
+
+    .account-avatar svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .account-label {
+      max-width: 110px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      font-size: .82rem;
+      font-weight: 720;
+    }
+
+    .account-chevron {
+      width: 13px;
+      height: 13px;
+      color: #8c8d96;
+      transition: transform .16s ease;
+    }
+
+    .account-button[aria-expanded="true"] .account-chevron {
+      transform: rotate(180deg);
+    }
+
+    .account-menu {
+      position: absolute;
+      top: calc(100% + 9px);
+      right: 0;
+      z-index: 70;
+      width: min(280px, calc(100vw - 28px));
+      padding: 9px;
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 13px;
+      background: rgba(16,16,20,.98);
+      box-shadow: 0 20px 55px rgba(0,0,0,.48);
+      backdrop-filter: blur(18px);
+    }
+
+    .account-menu-profile {
+      display: grid;
+      gap: 3px;
+      padding: 9px 10px 12px;
+      border-bottom: 1px solid rgba(255,255,255,.075);
+    }
+
+    .account-menu-profile strong {
+      font-size: .9rem;
+    }
+
+    .account-menu-profile span {
+      color: #85868f;
+      font-size: .76rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .account-sync-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 11px 10px 8px;
+      color: #a4a5ad;
+      font-size: .75rem;
+    }
+
+    .account-sync-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #57d38c;
+      box-shadow: 0 0 0 3px rgba(87,211,140,.10);
+    }
+
+    .account-sync-dot.syncing { background: #d9b95d; box-shadow: 0 0 0 3px rgba(217,185,93,.10); }
+    .account-sync-dot.error { background: #ff6b76; box-shadow: 0 0 0 3px rgba(255,107,118,.10); }
+
+    .account-menu > button {
+      width: 100%;
+      border: 0;
+      border-radius: 9px;
+      padding: 10px;
+      text-align: left;
+      background: transparent;
+      color: #e8e8eb;
+      cursor: pointer;
+      font-weight: 680;
+    }
+
+    .account-menu > button:hover { background: rgba(255,255,255,.06); }
+
+    .auth-modal-wrap {
+      position: fixed;
+      inset: 0;
+      z-index: 130;
+      display: none;
+      place-items: center;
+      padding: 20px;
+      background: rgba(0,0,0,.72);
+      backdrop-filter: blur(16px);
+    }
+
+    .auth-modal-wrap.open { display: grid; }
+
+    .auth-modal {
+      position: relative;
+      width: min(430px, 100%);
+      padding: 34px;
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 19px;
+      background: #111217;
+      box-shadow: 0 28px 90px rgba(0,0,0,.58);
+    }
+
+    .auth-close {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+    }
+
+    .auth-brand {
+      margin-bottom: 26px;
+      font-size: 1.1rem;
+      font-weight: 900;
+      letter-spacing: -.055em;
+    }
+
+    .auth-brand span { color: var(--accent-2); }
+
+    .auth-modal h2 {
+      margin: 0;
+      font-size: 1.75rem;
+      letter-spacing: -.045em;
+    }
+
+    .auth-modal > p:not(.auth-note) {
+      margin: 8px 0 22px;
+      color: #92939d;
+      font-size: .86rem;
+      line-height: 1.55;
+    }
+
+    .auth-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      padding: 4px;
+      margin-bottom: 20px;
+      border-radius: 10px;
+      background: rgba(255,255,255,.045);
+    }
+
+    .auth-tabs button {
+      border: 0;
+      border-radius: 7px;
+      padding: 9px 10px;
+      background: transparent;
+      color: #888992;
+      cursor: pointer;
+      font-size: .8rem;
+      font-weight: 750;
+    }
+
+    .auth-tabs button.active {
+      background: rgba(255,255,255,.09);
+      color: #fff;
+    }
+
+    #authForm { display: grid; gap: 14px; }
+
+    .auth-field {
+      display: grid;
+      gap: 7px;
+      color: #b6b7be;
+      font-size: .77rem;
+      font-weight: 720;
+    }
+
+    .auth-field input {
+      width: 100%;
+      height: 44px;
+      padding: 0 13px;
+      border: 1px solid rgba(255,255,255,.09);
+      border-radius: 9px;
+      background: rgba(255,255,255,.045);
+      color: #fff;
+      outline: none;
+    }
+
+    .auth-field input:focus {
+      border-color: rgba(157,140,255,.56);
+      box-shadow: 0 0 0 3px rgba(118,87,255,.12);
+    }
+
+    .auth-error {
+      min-height: 18px;
+      color: #ff8b94;
+      font-size: .78rem;
+      line-height: 1.4;
+    }
+
+    .auth-submit {
+      width: 100%;
+      justify-content: center;
+      min-height: 44px;
+      margin-top: 1px;
+    }
+
+    .auth-submit:disabled { opacity: .6; cursor: wait; }
+
+    .auth-note {
+      margin: 18px 0 0;
+      color: #71727b;
+      font-size: .72rem;
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 760px) {
+      .account-area { margin-left: auto; }
+      .account-button { height: 37px; }
+      .account-label { display: none; }
+      .account-chevron { display: none; }
+      .search { order: 3; flex-basis: 100%; }
+      .type-nav { order: 4; }
+      .auth-modal { padding: 30px 22px 24px; }
+    }
+
   </style>
 </head>
 <body>
@@ -1986,6 +2256,23 @@
       <div class="search">
         <svg class="icon search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input id="searchInput" type="search" placeholder="Search movies and TV shows..." autocomplete="off" />
+      </div>
+
+      <div class="account-area">
+        <button id="accountButton" class="account-button" type="button" aria-haspopup="true" aria-expanded="false">
+          <span id="accountAvatar" class="account-avatar" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>
+          </span>
+          <span id="accountLabel" class="account-label">Sign in</span>
+          <svg class="account-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div id="accountMenu" class="account-menu" hidden>
+          <div class="account-menu-profile">
+            <strong id="accountMenuName">Account</strong>
+          </div>
+          <div class="account-sync-line"><span id="accountSyncDot" class="account-sync-dot"></span><span id="accountSyncText">Synced across devices</span></div>
+          <button id="logoutButton" type="button">Sign out</button>
+        </div>
       </div>
     </div>
   </header>
@@ -2101,6 +2388,37 @@
     </div>
   </div>
 
+  <div id="authModalWrap" class="auth-modal-wrap" aria-hidden="true">
+    <div class="auth-modal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <button id="authClose" class="auth-close icon-btn" type="button" aria-label="Close sign in">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+      </button>
+      <div class="auth-brand">Show<span>Hub</span></div>
+      <h2 id="authTitle">Welcome back</h2>
+      <p id="authSubtitle">Sign in to keep your watch progress synced across devices.</p>
+
+      <div class="auth-tabs" role="tablist" aria-label="Account options">
+        <button id="authSignInTab" class="active" type="button" role="tab" aria-selected="true">Sign in</button>
+        <button id="authRegisterTab" type="button" role="tab" aria-selected="false">Create account</button>
+      </div>
+
+      <form id="authForm" novalidate>
+        <label class="auth-field">
+          <span>Username</span>
+          <input id="authUsername" type="text" autocomplete="username" minlength="3" maxlength="30"
+            pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,29}" placeholder="Choose a username" required />
+        </label>
+        <label class="auth-field">
+          <span>Password</span>
+          <input id="authPassword" type="password" autocomplete="current-password" minlength="8" maxlength="128" placeholder="At least 8 characters" required />
+        </label>
+        <div id="authError" class="auth-error" role="alert" aria-live="polite"></div>
+        <button id="authSubmit" class="btn btn-primary auth-submit" type="submit">Sign in</button>
+      </form>
+      <p class="auth-note">Sign in is required to watch. Your progress is saved to this account and synced across devices.</p>
+    </div>
+  </div>
+
   <script>
     const TVMAZE_API = "https://api.tvmaze.com";
     const CINEMETA_API = "https://v3-cinemeta.strem.io";
@@ -2145,7 +2463,11 @@
       initialCatalogueLoaded: false,
       typeScope: "all",
       heroMedia: null,
-      activeCollection: null
+      activeCollection: null,
+      user: null,
+      watchHistory: [],
+      authMode: "signin",
+      accountSyncState: "idle"
     };
 
     const el = id => document.getElementById(id);
@@ -2185,6 +2507,25 @@
     const catalogueActions = el("catalogueActions");
     const continueSection = el("continueSection");
     const continueRow = el("continueRow");
+    const accountButton = el("accountButton");
+    const accountAvatar = el("accountAvatar");
+    const accountLabel = el("accountLabel");
+    const accountMenu = el("accountMenu");
+    const accountMenuName = el("accountMenuName");
+    const accountSyncDot = el("accountSyncDot");
+    const accountSyncText = el("accountSyncText");
+    const logoutButton = el("logoutButton");
+    const authModalWrap = el("authModalWrap");
+    const authClose = el("authClose");
+    const authTitle = el("authTitle");
+    const authSubtitle = el("authSubtitle");
+    const authSignInTab = el("authSignInTab");
+    const authRegisterTab = el("authRegisterTab");
+    const authForm = el("authForm");
+    const authUsername = el("authUsername");
+    const authPassword = el("authPassword");
+    const authError = el("authError");
+    const authSubmit = el("authSubmit");
 
     function migrateWatchHistory() {
       if (localStorage.getItem(WATCH_HISTORY_KEY)) return;
@@ -2204,24 +2545,237 @@
       }
     }
 
-    function getWatchHistory() {
+    function normaliseHistoryList(entries) {
+      return [...(Array.isArray(entries) ? entries : [])]
+        .filter(entry => entry?.imdbId)
+        .sort((a, b) => (b.lastWatched || 0) - (a.lastWatched || 0))
+        .slice(0, MAX_WATCH_HISTORY);
+    }
+
+    function readLocalWatchHistory() {
       try {
         const parsed = JSON.parse(localStorage.getItem(WATCH_HISTORY_KEY) || "[]");
-        return Array.isArray(parsed) ? parsed : [];
+        return normaliseHistoryList(parsed);
       } catch {
         return [];
       }
     }
 
+    function writeLocalWatchHistory(entries) {
+      localStorage.setItem(WATCH_HISTORY_KEY, JSON.stringify(normaliseHistoryList(entries)));
+    }
+
+    function getWatchHistory() {
+      return state.user ? state.watchHistory : [];
+    }
+
     function setWatchHistory(entries) {
-      localStorage.setItem(
-        WATCH_HISTORY_KEY,
-        JSON.stringify(
-          [...entries]
-            .sort((a, b) => (b.lastWatched || 0) - (a.lastWatched || 0))
-            .slice(0, MAX_WATCH_HISTORY)
-        )
+      if (!state.user) return;
+      state.watchHistory = normaliseHistoryList(entries);
+    }
+
+    function mergeHistoryLists(...lists) {
+      const merged = new Map();
+      lists.flat().forEach(entry => {
+        if (!entry?.imdbId) return;
+        const existing = merged.get(entry.imdbId);
+        if (!existing || Number(entry.lastWatched || 0) >= Number(existing.lastWatched || 0)) {
+          merged.set(entry.imdbId, entry);
+        }
+      });
+      return normaliseHistoryList([...merged.values()]);
+    }
+
+    async function apiFetch(path, options = {}) {
+      const headers = { ...(options.headers || {}) };
+      if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+      const response = await fetch(path, {
+        ...options,
+        headers,
+        credentials: "include"
+      });
+      const data = response.status === 204 ? null : await response.json().catch(() => null);
+      if (!response.ok) {
+        const error = new Error(data?.error || `Request failed (${response.status})`);
+        error.status = response.status;
+        throw error;
+      }
+      return data;
+    }
+
+    function setAccountSyncState(mode, message = "") {
+      state.accountSyncState = mode;
+      accountSyncDot.classList.toggle("syncing", mode === "syncing");
+      accountSyncDot.classList.toggle("error", mode === "error");
+      accountSyncText.textContent = message || (
+        mode === "syncing" ? "Syncing watch progress…" :
+        mode === "error" ? "Sync interrupted — will retry" :
+        "Synced across devices"
       );
+    }
+
+    function setAccountUser(user) {
+      state.user = user || null;
+      closeAccountMenu();
+
+      if (!state.user) {
+        state.watchHistory = [];
+        accountAvatar.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>';
+        accountLabel.textContent = "Sign in";
+        accountButton.setAttribute("aria-label", "Sign in to ShowHub");
+        renderContinueWatching();
+        return;
+      }
+
+      const label = state.user.username || "Account";
+      accountAvatar.textContent = label.trim().charAt(0).toUpperCase() || "A";
+      accountLabel.textContent = label;
+      accountMenuName.textContent = label;
+      accountButton.setAttribute("aria-label", `Open account menu for ${label}`);
+      setAccountSyncState("idle");
+    }
+
+    function setAuthMode(mode) {
+      state.authMode = mode === "register" ? "register" : "signin";
+      const registering = state.authMode === "register";
+      authSignInTab.classList.toggle("active", !registering);
+      authRegisterTab.classList.toggle("active", registering);
+      authSignInTab.setAttribute("aria-selected", String(!registering));
+      authRegisterTab.setAttribute("aria-selected", String(registering));
+      authPassword.autocomplete = registering ? "new-password" : "current-password";
+      authTitle.textContent = registering ? "Create your account" : "Welcome back";
+      authSubtitle.textContent = registering
+        ? "Choose a username and password to watch and continue on any device."
+        : "Sign in with your username to watch and sync your progress.";
+      authSubmit.textContent = registering ? "Create account" : "Sign in";
+      authError.textContent = "";
+    }
+
+    function openAuthModal(mode = "signin") {
+      setAuthMode(mode);
+      authModalWrap.classList.add("open");
+      authModalWrap.setAttribute("aria-hidden", "false");
+      document.body.style.overflow = "hidden";
+      window.setTimeout(() => authUsername.focus(), 0);
+    }
+
+    function closeAuthModal() {
+      authModalWrap.classList.remove("open");
+      authModalWrap.setAttribute("aria-hidden", "true");
+      authError.textContent = "";
+      if (!playerScreen.classList.contains("open") && !modalWrap.classList.contains("open")) {
+        document.body.style.overflow = "";
+      }
+    }
+
+    function openAccountMenu() {
+      accountMenu.hidden = false;
+      accountButton.setAttribute("aria-expanded", "true");
+    }
+
+    function closeAccountMenu() {
+      accountMenu.hidden = true;
+      accountButton.setAttribute("aria-expanded", "false");
+    }
+
+    async function loadRemoteWatchHistory() {
+      const data = await apiFetch("/api/watch-history");
+      return normaliseHistoryList(data?.entries || []);
+    }
+
+    async function syncWatchHistoryFromAccount({ migrateLocal = true } = {}) {
+      if (!state.user) return;
+      setAccountSyncState("syncing");
+
+      const localEntries = migrateLocal ? readLocalWatchHistory() : [];
+      try {
+        const remoteEntries = await loadRemoteWatchHistory();
+        const merged = mergeHistoryLists(remoteEntries, localEntries);
+        state.watchHistory = merged;
+        renderContinueWatching();
+
+        if (localEntries.length) {
+          await apiFetch("/api/watch-history/sync", {
+            method: "POST",
+            body: JSON.stringify({ entries: localEntries })
+          });
+          state.watchHistory = await loadRemoteWatchHistory();
+          localStorage.removeItem(WATCH_HISTORY_KEY);
+          localStorage.removeItem(LEGACY_WATCH_HISTORY_KEY);
+          renderContinueWatching();
+        }
+        setAccountSyncState("idle");
+      } catch (error) {
+        console.error("Watch history sync failed", error);
+        if (localEntries.length) {
+          state.watchHistory = mergeHistoryLists(state.watchHistory, localEntries);
+          renderContinueWatching();
+        }
+        setAccountSyncState("error");
+      }
+    }
+
+    async function persistWatchEntryToAccount(entry) {
+      if (!state.user || !entry?.imdbId) return;
+      setAccountSyncState("syncing");
+      try {
+        await apiFetch(`/api/watch-history/${encodeURIComponent(entry.imdbId)}`, {
+          method: "PUT",
+          body: JSON.stringify(entry)
+        });
+        setAccountSyncState("idle");
+      } catch (error) {
+        console.error("Could not sync watch progress", error);
+        setAccountSyncState("error");
+      }
+    }
+
+    async function restoreAccountSession() {
+      try {
+        const data = await apiFetch("/api/auth/me");
+        setAccountUser(data?.user || null);
+        if (state.user) await syncWatchHistoryFromAccount();
+      } catch (error) {
+        if (error.status !== 401) console.warn("Account session check failed", error);
+        setAccountUser(null);
+      }
+    }
+
+    async function submitAuthForm(event) {
+      event.preventDefault();
+      authError.textContent = "";
+      authSubmit.disabled = true;
+
+      const registering = state.authMode === "register";
+      const payload = {
+        username: authUsername.value.trim(),
+        password: authPassword.value
+      };
+
+      try {
+        const data = await apiFetch(registering ? "/api/auth/register" : "/api/auth/login", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        setAccountUser(data?.user || null);
+        closeAuthModal();
+        authForm.reset();
+        await syncWatchHistoryFromAccount();
+      } catch (error) {
+        authError.textContent = error.message || "Could not sign in.";
+      } finally {
+        authSubmit.disabled = false;
+      }
+    }
+
+    async function logoutAccount() {
+      try {
+        await apiFetch("/api/auth/logout", { method: "POST" });
+      } catch (error) {
+        console.warn("Logout request failed", error);
+      } finally {
+        setAccountUser(null);
+      }
     }
 
     function stripHtml(value = "") {
@@ -2326,11 +2880,21 @@
       const withoutCurrentTitle = history.filter(item => item.imdbId !== entry.imdbId);
       setWatchHistory([entry, ...withoutCurrentTitle]);
       renderContinueWatching();
+      if (state.user) persistWatchEntryToAccount(entry);
     }
 
     function removeWatchEntry(entry) {
       setWatchHistory(getWatchHistory().filter(item => item.imdbId !== entry.imdbId));
       renderContinueWatching();
+      if (state.user && entry?.imdbId) {
+        setAccountSyncState("syncing");
+        apiFetch(`/api/watch-history/${encodeURIComponent(entry.imdbId)}`, { method: "DELETE" })
+          .then(() => setAccountSyncState("idle"))
+          .catch(error => {
+            console.error("Could not remove synced watch history", error);
+            setAccountSyncState("error");
+          });
+      }
     }
 
     function updatePlaybackProgress(currentTime, duration, eventName = "") {
@@ -3133,16 +3697,27 @@
       }
     }
 
-    function buildTvWatchUrl(show, season, episode, startAt = 0) {
-      const params = new URLSearchParams({ autoPlay: "true" });
-      if (Number(startAt) >= 5) params.set("startAt", String(Math.floor(Number(startAt))));
-      return `https://vidfast.vc/tv/${encodeURIComponent(getImdbId(show))}/${season}/${episode}?${params.toString()}`;
+    function requireSignedInForPlayback() {
+      if (state.user) return true;
+      closeModal();
+      openAuthModal("signin");
+      authSubtitle.textContent = "Sign in with your username before you can watch.";
+      return false;
     }
 
-    function buildMovieWatchUrl(movie, startAt = 0) {
-      const params = new URLSearchParams({ autoPlay: "true" });
-      if (Number(startAt) >= 5) params.set("startAt", String(Math.floor(Number(startAt))));
-      return `https://vidfast.vc/movie/${encodeURIComponent(getImdbId(movie))}?${params.toString()}`;
+    async function getPlaybackUrl(media, { mediaType, season = null, episode = null, startAt = 0 }) {
+      const params = new URLSearchParams({
+        type: mediaType,
+        imdbId: getImdbId(media),
+        startAt: String(Math.max(0, Math.floor(Number(startAt) || 0)))
+      });
+      if (mediaType === "tv") {
+        params.set("season", String(season));
+        params.set("episode", String(episode));
+      }
+      const data = await apiFetch(`/api/playback-url?${params.toString()}`);
+      if (!data?.url) throw new Error("Playback URL was not available.");
+      return data.url;
     }
 
     function launchPlayer(media, url, subtitle, playbackState) {
@@ -3315,7 +3890,8 @@
       }
     }
 
-    function openEpisode(show, season, episode, options = {}) {
+    async function openEpisode(show, season, episode, options = {}) {
+      if (!requireSignedInForPlayback()) return;
       closeModal();
       const imdbId = getImdbId(show);
       const existing = getSavedPlayback(imdbId);
@@ -3327,30 +3903,49 @@
         ? requestedStart
         : isSameEpisode ? Number(existing?.currentTime) || 0 : 0;
 
-      const watchEntry = makeWatchEntry(show, {
-        mediaType: "tv",
-        season: Number(season),
-        episode: Number(episode)
-      }, isSameEpisode ? existing : null);
-      watchEntry.lastWatched = Date.now();
-      saveWatchEntry(watchEntry);
+      try {
+        const playbackUrl = await getPlaybackUrl(show, {
+          mediaType: "tv",
+          season: Number(season),
+          episode: Number(episode),
+          startAt
+        });
 
-      launchPlayer(
-        show,
-        buildTvWatchUrl(show, season, episode, startAt),
-        `Season ${season} · Episode ${episode}` +
-          (startAt >= 5 ? ` · Resuming at ${formatWatchTime(startAt)}` : ""),
-        { mediaType: "tv", season: Number(season), episode: Number(episode) }
-      );
+        const watchEntry = makeWatchEntry(show, {
+          mediaType: "tv",
+          season: Number(season),
+          episode: Number(episode)
+        }, isSameEpisode ? existing : null);
+        watchEntry.lastWatched = Date.now();
+        saveWatchEntry(watchEntry);
 
-      history.pushState(
-        { player: true, mediaType: "tv", title: getMediaName(show), season, episode },
-        "",
-        `#watch=${encodeURIComponent(imdbId)}-s${season}e${episode}`
-      );
+        launchPlayer(
+          show,
+          playbackUrl,
+          `Season ${season} · Episode ${episode}` +
+            (startAt >= 5 ? ` · Resuming at ${formatWatchTime(startAt)}` : ""),
+          { mediaType: "tv", season: Number(season), episode: Number(episode) }
+        );
+
+        history.pushState(
+          { player: true, mediaType: "tv", title: getMediaName(show), season, episode },
+          "",
+          `#watch=${encodeURIComponent(imdbId)}-s${season}e${episode}`
+        );
+      } catch (error) {
+        if (error.status === 401) {
+          setAccountUser(null);
+          openAuthModal("signin");
+          authSubtitle.textContent = "Your session expired. Sign in again to keep watching.";
+          return;
+        }
+        console.error("Could not start episode", error);
+        alert(error.message || "Could not start this episode.");
+      }
     }
 
-    function openMovie(movie, options = {}) {
+    async function openMovie(movie, options = {}) {
+      if (!requireSignedInForPlayback()) return;
       closeModal();
       const imdbId = getImdbId(movie);
       if (!imdbId) return;
@@ -3361,23 +3956,36 @@
         ? requestedStart
         : existing?.mediaType === "movie" ? Number(existing.currentTime) || 0 : 0;
 
-      const watchEntry = makeWatchEntry(movie, { mediaType: "movie" },
-        existing?.mediaType === "movie" ? existing : null);
-      watchEntry.lastWatched = Date.now();
-      saveWatchEntry(watchEntry);
+      try {
+        const playbackUrl = await getPlaybackUrl(movie, { mediaType: "movie", startAt });
 
-      launchPlayer(
-        movie,
-        buildMovieWatchUrl(movie, startAt),
-        "Movie" + (startAt >= 5 ? ` · Resuming at ${formatWatchTime(startAt)}` : ""),
-        { mediaType: "movie", season: null, episode: null }
-      );
+        const watchEntry = makeWatchEntry(movie, { mediaType: "movie" },
+          existing?.mediaType === "movie" ? existing : null);
+        watchEntry.lastWatched = Date.now();
+        saveWatchEntry(watchEntry);
 
-      history.pushState(
-        { player: true, mediaType: "movie", title: getMediaName(movie) },
-        "",
-        `#watch=${encodeURIComponent(imdbId)}-movie`
-      );
+        launchPlayer(
+          movie,
+          playbackUrl,
+          "Movie" + (startAt >= 5 ? ` · Resuming at ${formatWatchTime(startAt)}` : ""),
+          { mediaType: "movie", season: null, episode: null }
+        );
+
+        history.pushState(
+          { player: true, mediaType: "movie", title: getMediaName(movie) },
+          "",
+          `#watch=${encodeURIComponent(imdbId)}-movie`
+        );
+      } catch (error) {
+        if (error.status === 401) {
+          setAccountUser(null);
+          openAuthModal("signin");
+          authSubtitle.textContent = "Your session expired. Sign in again to keep watching.";
+          return;
+        }
+        console.error("Could not start movie", error);
+        alert(error.message || "Could not start this movie.");
+      }
     }
 
     function stopPlayerFrame() {
@@ -3536,6 +4144,25 @@
     collectionLoadMoreButton.addEventListener("click", loadMoreCollectionTitles);
     collectionBack.addEventListener("click", closeCollectionView);
 
+    accountButton.addEventListener("click", event => {
+      event.stopPropagation();
+      if (!state.user) {
+        openAuthModal("signin");
+        return;
+      }
+      accountMenu.hidden ? openAccountMenu() : closeAccountMenu();
+    });
+    accountMenu.addEventListener("click", event => event.stopPropagation());
+    logoutButton.addEventListener("click", logoutAccount);
+    authClose.addEventListener("click", closeAuthModal);
+    authSignInTab.addEventListener("click", () => setAuthMode("signin"));
+    authRegisterTab.addEventListener("click", () => setAuthMode("register"));
+    authForm.addEventListener("submit", submitAuthForm);
+    authModalWrap.addEventListener("click", event => {
+      if (event.target === authModalWrap) closeAuthModal();
+    });
+    document.addEventListener("click", closeAccountMenu);
+
     el("closeModal").addEventListener("click", closeModal);
     el("playerBack").addEventListener("click", () => closePlayer());
 
@@ -3609,8 +4236,13 @@
 
     document.addEventListener("keydown", event => {
       if (event.key !== "Escape") return;
+      closeAccountMenu();
       if (playerScreen.classList.contains("open")) {
         closePlayer();
+        return;
+      }
+      if (authModalWrap.classList.contains("open")) {
+        closeAuthModal();
         return;
       }
       if (modalWrap.classList.contains("open")) closeModal();
@@ -3619,21 +4251,22 @@
     async function initialiseShowHub() {
       migrateWatchHistory();
 
-      // Watch history is local and should be visible immediately, independently
-      // of catalogue network requests.
+      // Currently Watching is account-only. Old local history remains hidden
+      // while signed out and is migrated into the account after sign-in.
       renderContinueWatching();
       catalogueActions.style.display = "none";
 
-      await loadInitialCatalogue();
+      await Promise.all([
+        restoreAccountSession(),
+        loadInitialCatalogue()
+      ]);
     }
 
-    // Restore the continue row when the page is revived from the back/forward
-    // cache, and if another tab updates the same ShowHub watch history.
-    window.addEventListener("pageshow", renderContinueWatching);
-    window.addEventListener("storage", event => {
-      if (event.key === WATCH_HISTORY_KEY || event.key === LEGACY_WATCH_HISTORY_KEY) {
-        renderContinueWatching();
-      }
+    // When a signed-in page returns from the back/forward cache, re-fetch the
+    // account history so progress made on another device can appear here.
+    window.addEventListener("pageshow", () => {
+      if (state.user) syncWatchHistoryFromAccount({ migrateLocal: false });
+      else renderContinueWatching();
     });
 
     initialiseShowHub();

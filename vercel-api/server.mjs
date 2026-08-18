@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 import { promisify } from "node:util";
 import express from "express";
 import { neon } from "@neondatabase/serverless";
-import * as cheerio from "cheerio";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const PORT = 3000; // Local development only; Vercel supplies its own runtime.
@@ -21,12 +20,20 @@ const app = express();
 const authAttempts = new Map();
 const liveSportsScheduleCache = new Map();
 const LIVE_SPORTS_SCHEDULE_CACHE_MS = 10 * 60 * 1000;
-const DLSTREAMS_PUBLIC_SCHEDULE_URLS = [
-  "https://dlstreams.com/",
-  "https://dlhd.st/",
-  "https://dlstreams.st/",
-  "https://dlhd.dad/"
-];
+const SKY_SPORTS_GUIDE_SIDS = new Map([
+  [35, 3096],  // Sky Sports Football
+  [36, 3097],  // Sky Sports+
+  [37, 1703],  // Sky Sports Action
+  [38, 1701],  // Sky Sports Main Event
+  [46, 1705],  // Sky Sports Tennis
+  [130, 1010], // Sky Sports Premier League
+  [60, 3835],  // Sky Sports F1
+  [65, 1702],  // Sky Sports Cricket
+  [70, 1094],  // Sky Sports Golf
+  [366, 1340], // Sky Sports News
+  [449, 4090], // Sky Sports Mix
+  [554, 4032]  // Sky Sports Racing
+]);
 
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
@@ -301,366 +308,97 @@ function watchRowToClient(row) {
   };
 }
 
+function findSkyScheduleEvents(payload) {
+  if (!payload) return [];
+  if (Array.isArray(payload?.events)) return payload.events;
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      const events = findSkyScheduleEvents(item);
+      if (events.length) return events;
+    }
+    return [];
+  }
+  if (typeof payload === "object") {
+    const preferredKeys = ["schedule", "schedules", "services", "channels", "data"];
+    for (const key of preferredKeys) {
+      if (!(key in payload)) continue;
+      const events = findSkyScheduleEvents(payload[key]);
+      if (events.length) return events;
+    }
+    for (const value of Object.values(payload)) {
+      if (!value || typeof value !== "object") continue;
+      const events = findSkyScheduleEvents(value);
+      if (events.length) return events;
+    }
+  }
+  return [];
+}
+
+function skyTimestampMs(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return NaN;
+  return numeric > 1e12 ? numeric : numeric * 1000;
+}
+
+function normaliseSkyScheduleEvent(raw) {
+  const startMs = skyTimestampMs(raw?.st ?? raw?.start ?? raw?.startTime ?? raw?.starttime);
+  if (!Number.isFinite(startMs)) return null;
+
+  let endMs = skyTimestampMs(raw?.end ?? raw?.et ?? raw?.endTime ?? raw?.endtime);
+  if (!Number.isFinite(endMs)) {
+    const duration = Number(raw?.d ?? raw?.duration ?? 0);
+    if (Number.isFinite(duration) && duration > 0) {
+      // Sky's HAWK guide exposes duration in seconds.
+      endMs = startMs + duration * 1000;
+    }
+  }
+  if (!Number.isFinite(endMs) || endMs <= startMs) return null;
+
+  const title = cleanText(raw?.t ?? raw?.title ?? raw?.name, 300) || "Untitled";
+  const synopsis = cleanText(raw?.sy ?? raw?.synopsis ?? raw?.description ?? raw?.desc, 2000);
+  return {
+    start: new Date(startMs).toISOString(),
+    end: new Date(endMs).toISOString(),
+    title,
+    synopsis
+  };
+}
+
 function validGuideDate(value) {
   const text = String(value || "");
   return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
 }
 
-function normaliseScheduleChannelId(href) {
-  const text = String(href || "");
-  if (!text) return "";
-  try {
-    const url = new URL(text, "https://dlstreams.st");
-    const id = url.searchParams.get("id") || url.searchParams.get("channel");
-    if (id && /^\d+$/.test(id)) return id;
-  } catch {}
-
-  const streamMatch = text.match(/stream-(\d+)\.php/i);
-  if (streamMatch) return streamMatch[1];
-  return text.match(/(?:^|\D)(\d{1,5})(?:\D|$)/)?.[1] || "";
-}
-
-function scheduleDateKey(dayLabel) {
-  const match = String(dayLabel || "").match(
-    /(\d{1,2})\s*(?:st|nd|rd|th)?\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})/i
-  );
-  if (!match) return "";
-  const months = {
-    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
-    july: 7, august: 8, september: 9, october: 10, november: 11, december: 12
-  };
-  const month = months[match[2].toLowerCase()];
-  return `${match[3]}-${String(month).padStart(2, "0")}-${String(Number(match[1])).padStart(2, "0")}`;
-}
-
-function scheduleClockValue(...values) {
-  for (const value of values) {
-    const text = String(value || "").trim();
-    if (!text) continue;
-    const match = text.match(/(?:^|\D)([01]?\d|2[0-3]):([0-5]\d)(?:\D|$)/);
-    if (match) return `${String(Number(match[1])).padStart(2, "0")}:${match[2]}`;
-  }
-  return "";
-}
-
-function addScheduleEvent(days, date, event) {
-  if (!date || !event?.time || !event?.title || !Array.isArray(event.channels) || !event.channels.length) return;
-  const events = days.get(date) || [];
-  events.push(event);
-  days.set(date, events);
-}
-
-function parseDlstreamsScheduleHtml(html) {
-  const $ = cheerio.load(String(html || ""));
-  const scheduleRoot = $("div.schedule").first();
-  const dayNodes = scheduleRoot.length
-    ? scheduleRoot.find("div.schedule__day")
-    : $("div.schedule__day");
-
-  if (!dayNodes.length) throw new Error("DLStreams schedule days were not found in the HTML response.");
-
-  const days = new Map();
-  dayNodes.each((_dayIndex, dayElement) => {
-    const day = $(dayElement);
-    const dayLabel = cleanText(
-      day.find("div.schedule__dayTitle, .schedule__day-title, [data-schedule-day]").first().text() ||
-      day.attr("data-date"),
-      180
-    );
-    const date = scheduleDateKey(dayLabel);
-    if (!date) return;
-
-    const categories = day.find("div.schedule__category");
-    const categoryNodes = categories.length ? categories.toArray() : [dayElement];
-
-    categoryNodes.forEach(categoryElement => {
-      const category = $(categoryElement);
-      const categoryName = cleanText(
-        category.find(".schedule__catHeader .card__meta, .schedule__catHeader, .schedule__categoryTitle").first().text(),
-        160
-      ) || "Other";
-
-      category.find("div.schedule__event").each((_eventIndex, eventElement) => {
-        const event = $(eventElement);
-        const header = event.find(".schedule__eventHeader").first();
-        const timeNode = event.find(".schedule__time").first();
-        const time = scheduleClockValue(
-          timeNode.attr("data-time"),
-          timeNode.text(),
-          header.attr("data-time"),
-          header.text(),
-          event.attr("data-time")
-        );
-        if (!time) return;
-
-        const titleNode = event.find(".schedule__eventTitle").first();
-        let title = cleanText(
-          titleNode.text() ||
-          header.attr("data-title") ||
-          event.attr("data-title"),
-          500
-        );
-        if (!title) {
-          const headerText = cleanText(header.text(), 700);
-          title = cleanText(headerText.replace(time, "").replace(/^\s*[-–—|:]\s*/, ""), 500);
-        }
-        if (!title) return;
-
-        const channels = [];
-        const addLinks = links => {
-          links.each((_linkIndex, linkElement) => {
-            const link = $(linkElement);
-            const channelId = normaliseScheduleChannelId(link.attr("href"));
-            const channelName = cleanText(link.attr("title") || link.text(), 200);
-            if (!channelId || !channelName) return;
-            if (!channels.some(channel => channel.id === channelId)) {
-              channels.push({ id: channelId, name: channelName });
-            }
-          });
-        };
-
-        addLinks(event.find("a[href*='id='], a[href*='stream-']"));
-        if (!channels.length) return;
-
-        addScheduleEvent(days, date, {
-          time,
-          title,
-          category: categoryName,
-          channels
-        });
-      });
-    });
-  });
-
-  if (!days.size) throw new Error("No playable DLStreams schedule data was found in the HTML response.");
-  return days;
-}
-
-function decodeScheduleText(value) {
-  const raw = String(value || "");
-  if (!raw.includes("&")) return raw;
-  return cheerio.load(`<span>${raw}</span>`)("span").text();
-}
-
-function readerLineLinks(line) {
-  const channels = [];
-  const text = String(line || "");
-  const markdownLink = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
-  let match;
-  while ((match = markdownLink.exec(text))) {
-    const id = normaliseScheduleChannelId(match[2]);
-    const name = cleanText(decodeScheduleText(match[1]).replace(/\\([\[\]_*])/g, "$1"), 200);
-    if (!id || !name) continue;
-    if (!channels.some(channel => channel.id === id)) channels.push({ id, name });
-  }
-  return channels;
-}
-
-function cleanReaderLine(line) {
-  return decodeScheduleText(String(line || ""))
-    .replace(/^\s{0,3}#{1,6}\s*/, "")
-    .replace(/^[-*]\s+/, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function isReaderNoiseLine(line) {
-  const lower = String(line || "").toLowerCase();
-  if (!lower) return true;
-  return lower === "schedule" ||
-    lower.startsWith("title:") ||
-    lower.startsWith("url source:") ||
-    lower.startsWith("published time:") ||
-    lower.startsWith("markdown content:") ||
-    lower.startsWith("search events or channels") ||
-    lower === "select" ||
-    lower === "all" ||
-    lower === "preparing schedule…" ||
-    lower === "preparing schedule..." ||
-    lower.startsWith("extra schedule") ||
-    lower.startsWith("extra ppv") ||
-    lower.startsWith("extra backup") ||
-    lower.startsWith("extra sd stream");
-}
-
-function parseDlstreamsReaderText(payload) {
-  const lines = String(payload || "").replace(/\r/g, "").split("\n");
-  const days = new Map();
-  let currentDate = "";
-  let currentCategory = "Other";
-  let pendingEvent = null;
-
-  const flushEvent = () => {
-    if (pendingEvent && pendingEvent.channels.length) {
-      addScheduleEvent(days, currentDate, pendingEvent);
-    }
-    pendingEvent = null;
-  };
-
-  for (const rawLine of lines) {
-    const visible = cleanReaderLine(rawLine);
-    if (!visible) continue;
-
-    const date = scheduleDateKey(visible);
-    if (date && /schedule\s*time|schedule/i.test(visible)) {
-      flushEvent();
-      currentDate = date;
-      currentCategory = "Other";
-      continue;
-    }
-    if (!currentDate) continue;
-
-    const time = scheduleClockValue(visible);
-    const eventMatch = visible.match(/^([01]?\d|2[0-3]):([0-5]\d)\s+(.+)$/);
-    if (time && eventMatch) {
-      flushEvent();
-      const title = cleanText(eventMatch[3], 500);
-      if (!title) continue;
-      pendingEvent = {
-        time,
-        title,
-        category: currentCategory || "Other",
-        channels: []
-      };
-      const sameLineChannels = readerLineLinks(rawLine);
-      sameLineChannels.forEach(channel => {
-        if (!pendingEvent.channels.some(existing => existing.id === channel.id)) pendingEvent.channels.push(channel);
-      });
-      continue;
-    }
-
-    const links = readerLineLinks(rawLine);
-    if (pendingEvent && links.length) {
-      links.forEach(channel => {
-        if (!pendingEvent.channels.some(existing => existing.id === channel.id)) pendingEvent.channels.push(channel);
-      });
-      continue;
-    }
-
-    if (isReaderNoiseLine(visible)) continue;
-
-    // Category labels on the public page sit between groups of events. Once
-    // an event has received its channel links, the next plain line is the next
-    // category heading.
-    if (pendingEvent?.channels?.length) {
-      flushEvent();
-    }
-
-    if (!pendingEvent && visible.length <= 120 && !/^https?:\/\//i.test(visible)) {
-      currentCategory = cleanText(visible, 160) || "Other";
-    }
-  }
-
-  flushEvent();
-  if (!days.size) throw new Error("No playable schedule entries were found in the public reader response.");
-  return days;
-}
-
-async function fetchScheduleResponse(url, options = {}) {
-  const response = await fetch(url, {
-    redirect: "follow",
-    signal: AbortSignal.timeout(options.timeout || 15000),
-    headers: options.headers || {}
-  });
-  if (!response.ok) throw new Error(`${url} returned HTTP ${response.status}.`);
-  return response.text();
-}
-
-async function fetchDlstreamsPublicSchedule() {
-  const cacheKey = "dlstreams:public-schedule-v3";
+async function fetchSkySportsSchedule(streamId, guideSid, date) {
+  const cacheKey = `${streamId}:${date}`;
   const cached = liveSportsScheduleCache.get(cacheKey);
   if (cached && Date.now() - cached.savedAt < LIVE_SPORTS_SCHEDULE_CACHE_MS) {
-    return cached.days;
+    return cached.events;
   }
 
-  const errors = [];
-  const directAttempts = DLSTREAMS_PUBLIC_SCHEDULE_URLS.map(async url => {
-    try {
-      const payload = await fetchScheduleResponse(url, {
-        timeout: 5500,
-        headers: {
-          Accept: "text/html,application/xhtml+xml",
-          "Accept-Language": "en-GB,en;q=0.9",
-          Referer: url,
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
-        }
-      });
-      return parseDlstreamsScheduleHtml(payload);
-    } catch (error) {
-      errors.push(`direct ${url}: ${error?.message || error}`);
-      throw error;
-    }
+  const skyDate = date.replaceAll("-", "");
+  const url = `https://awk.epgsky.com/hawk/linear/schedule/${skyDate}/${guideSid}`;
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json, text/javascript, */*",
+      "User-Agent": "ShowHub/1.0"
+    },
+    signal: AbortSignal.timeout(8000)
   });
-
-  // Reader is kept as one parallel fallback, never as a long sequential chain.
-  // This means a blocked upstream can no longer hold a Vercel function open for
-  // tens of seconds. The first parseable response wins.
-  const readerAttempt = (async () => {
-    const target = "https://dlstreams.com/";
-    try {
-      const payload = await fetchScheduleResponse(`https://r.jina.ai/${target}`, {
-        timeout: 6500,
-        headers: {
-          Accept: "text/plain,text/markdown;q=0.9,*/*;q=0.8",
-          "X-No-Cache": "true",
-          "X-Timeout": "4"
-        }
-      });
-      return parseDlstreamsReaderText(payload);
-    } catch (error) {
-      errors.push(`reader ${target}: ${error?.message || error}`);
-      throw error;
-    }
-  })();
-
-  try {
-    const days = await Promise.any([...directAttempts, readerAttempt]);
-    liveSportsScheduleCache.set(cacheKey, { savedAt: Date.now(), days });
-    return days;
-  } catch {
-    // If a warm Vercel instance has an older successful copy, use it rather than
-    // showing an empty sports page during a temporary upstream outage.
-    if (cached?.days?.size) return cached.days;
-    console.error("Live sports schedule sources failed", errors);
-    const error = new Error("The live sports schedule source did not respond in time.");
-    error.status = 504;
+  if (!response.ok) {
+    const error = new Error(`Programme guide returned HTTP ${response.status}.`);
+    error.status = 502;
     throw error;
   }
-}
 
-function liveScheduleEventsForDate(days, date, allowedIds = null) {
-  const requested = days.get(date) || [];
-  const allowed = allowedIds?.size ? allowedIds : null;
-  const seen = new Set();
-
-  return requested
-    .map(event => {
-      const channels = (event.channels || []).filter(channel => !allowed || allowed.has(String(channel.id)));
-      if (!channels.length) return null;
-      return {
-        time: event.time,
-        title: event.title,
-        category: event.category || "Other",
-        channels
-      };
-    })
+  const payload = await response.json();
+  const events = findSkyScheduleEvents(payload)
+    .map(normaliseSkyScheduleEvent)
     .filter(Boolean)
-    .filter(event => {
-      const key = `${event.time}|${event.title}|${event.channels.map(channel => channel.id).join(",")}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .sort((a, b) => a.time.localeCompare(b.time) || a.title.localeCompare(b.title));
-}
+    .sort((a, b) => new Date(a.start) - new Date(b.start));
 
-function eventsForLiveChannel(days, streamId, date) {
-  return liveScheduleEventsForDate(days, date, new Set([String(streamId)]))
-    .map(event => ({
-      time: event.time,
-      title: event.title,
-      category: event.category || ""
-    }));
+  liveSportsScheduleCache.set(cacheKey, { savedAt: Date.now(), events });
+  return events;
 }
 
 async function ensureSchema() {
@@ -749,35 +487,12 @@ app.get("/api/health", async (_req, res, next) => {
   }
 });
 
-app.get("/api/live-sports/schedule", async (req, res, next) => {
-  try {
-    const requestedDate = validGuideDate(req.query.date);
-    const days = await fetchDlstreamsPublicSchedule();
-    const availableDates = [...days.keys()].sort();
-
-    const dates = requestedDate ? [requestedDate] : availableDates;
-    const events = dates.flatMap(date =>
-      liveScheduleEventsForDate(days, date).map(event => ({ ...event, date }))
-    );
-
-    res.setHeader("Cache-Control", "public, max-age=120, s-maxage=600, stale-while-revalidate=600");
-    res.json({
-      date: requestedDate || null,
-      availableDates,
-      timezone: "Europe/London",
-      source: "DLStreams public schedule",
-      events
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
 app.get("/api/live-sports/schedule/:streamId", async (req, res, next) => {
   try {
-    const streamId = String(req.params.streamId || "");
-    if (!/^\d+$/.test(streamId)) {
-      return res.status(400).json({ error: "Invalid live channel ID." });
+    const streamId = Number(req.params.streamId);
+    const guideSid = SKY_SPORTS_GUIDE_SIDS.get(streamId);
+    if (!guideSid) {
+      return res.status(404).json({ error: "A programme guide is not available for this channel." });
     }
 
     const requestedDate = validGuideDate(req.query.date);
@@ -785,16 +500,9 @@ app.get("/api/live-sports/schedule/:streamId", async (req, res, next) => {
       return res.status(400).json({ error: "Use a date in YYYY-MM-DD format." });
     }
 
-    const days = await fetchDlstreamsPublicSchedule();
-    const events = eventsForLiveChannel(days, streamId, requestedDate);
+    const events = await fetchSkySportsSchedule(streamId, guideSid, requestedDate);
     res.setHeader("Cache-Control", "public, max-age=120, s-maxage=600, stale-while-revalidate=300");
-    res.json({
-      streamId,
-      date: requestedDate,
-      timezone: "Europe/London",
-      source: "DLStreams public schedule",
-      events
-    });
+    res.json({ streamId, date: requestedDate, timezone: "Europe/London", events });
   } catch (error) {
     next(error);
   }

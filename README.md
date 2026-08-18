@@ -1,4 +1,4 @@
-# ShowHub — GitHub Pages frontend + Vercel API + Neon
+# ShowHub
 
 ## Architecture
 

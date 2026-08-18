@@ -2384,6 +2384,184 @@
       font-weight: 700;
     }
 
+    .live-channel-tile {
+      min-width: 0;
+    }
+
+    .live-channel-actions {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .live-guide-button {
+      appearance: none;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(255,255,255,.045);
+      color: var(--text);
+      min-height: 38px;
+      padding: 0 13px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: background .16s ease, border-color .16s ease;
+    }
+
+    .live-guide-button:hover {
+      background: rgba(255,255,255,.09);
+      border-color: rgba(255,255,255,.22);
+    }
+
+    .live-guide-unavailable {
+      display: flex;
+      align-items: center;
+      min-height: 38px;
+      color: var(--muted);
+      font-size: 11px;
+      padding: 0 4px;
+    }
+
+    .live-schedule-wrap {
+      position: fixed;
+      inset: 0;
+      z-index: 1200;
+      display: none;
+      place-items: center;
+      padding: 22px;
+      background: rgba(3,5,9,.82);
+      backdrop-filter: blur(12px);
+    }
+
+    .live-schedule-wrap.open { display: grid; }
+
+    .live-schedule-panel {
+      width: min(760px, 100%);
+      max-height: min(820px, calc(100vh - 44px));
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: #0d111a;
+      box-shadow: 0 30px 80px rgba(0,0,0,.55);
+    }
+
+    .live-schedule-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 22px 22px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .live-schedule-head h2 {
+      margin: 4px 0 3px;
+      font-size: 23px;
+      letter-spacing: -.45px;
+    }
+
+    .live-schedule-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .live-schedule-tabs {
+      display: flex;
+      gap: 8px;
+      padding: 14px 22px 0;
+    }
+
+    .live-schedule-tab {
+      appearance: none;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      padding: 8px 13px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .live-schedule-tab.active {
+      color: #fff;
+      background: rgba(255,255,255,.09);
+      border-color: rgba(255,255,255,.22);
+    }
+
+    .live-schedule-list {
+      overflow-y: auto;
+      padding: 12px 22px 22px;
+    }
+
+    .live-schedule-item {
+      display: grid;
+      grid-template-columns: 112px minmax(0,1fr);
+      gap: 16px;
+      padding: 14px 4px;
+      border-bottom: 1px solid rgba(255,255,255,.07);
+    }
+
+    .live-schedule-item:last-child { border-bottom: 0; }
+
+    .live-schedule-item.now {
+      margin: 0 -10px;
+      padding-left: 14px;
+      padding-right: 14px;
+      border: 1px solid rgba(255,54,91,.28);
+      border-radius: 12px;
+      background: rgba(255,54,91,.07);
+    }
+
+    .live-schedule-time {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .live-schedule-item.now .live-schedule-time { color: #fff; }
+
+    .live-schedule-title {
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.3;
+    }
+
+    .live-schedule-synopsis {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .live-schedule-now-badge {
+      display: inline-flex;
+      align-items: center;
+      margin-left: 7px;
+      border-radius: 999px;
+      background: #ff365b;
+      color: white;
+      padding: 2px 6px;
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+      vertical-align: 1px;
+    }
+
+    .live-schedule-status {
+      padding: 28px 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
     .live-sports-empty {
       padding: 30px 0;
       color: var(--muted);
@@ -2399,6 +2577,12 @@
         padding: 14px;
       }
       .live-channel-name { font-size: 14px; }
+      .live-schedule-wrap { padding: 10px; }
+      .live-schedule-panel { max-height: calc(100vh - 20px); }
+      .live-schedule-head { padding: 18px 18px 14px; }
+      .live-schedule-tabs { padding-left: 18px; padding-right: 18px; }
+      .live-schedule-list { padding-left: 18px; padding-right: 18px; }
+      .live-schedule-item { grid-template-columns: 88px minmax(0,1fr); gap: 11px; }
     }
 
     @media (max-width: 420px) {
@@ -2538,6 +2722,26 @@
     </div>
   </section>
 
+  <div id="liveScheduleWrap" class="live-schedule-wrap" aria-hidden="true">
+    <div class="live-schedule-panel" role="dialog" aria-modal="true" aria-labelledby="liveScheduleTitle">
+      <div class="live-schedule-head">
+        <div>
+          <div class="eyebrow">TV guide</div>
+          <h2 id="liveScheduleTitle">Channel schedule</h2>
+          <p id="liveScheduleSubtitle">Times shown in UK time</p>
+        </div>
+        <button id="liveScheduleClose" class="icon-btn" type="button" aria-label="Close schedule">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+        </button>
+      </div>
+      <div class="live-schedule-tabs" role="tablist" aria-label="Schedule date">
+        <button id="liveScheduleToday" class="live-schedule-tab active" type="button">Today</button>
+        <button id="liveScheduleTomorrow" class="live-schedule-tab" type="button">Tomorrow</button>
+      </div>
+      <div id="liveScheduleList" class="live-schedule-list"></div>
+    </div>
+  </div>
+
   <div id="modalWrap" class="modal-wrap" aria-hidden="true">
     <div class="modal">
       <div id="modalBanner" class="modal-banner">
@@ -2611,18 +2815,18 @@
     const MAX_ITEMS_PER_ROW = 20;
     const LIVE_STREAM_BASE = "https://dlstreams.st/stream/stream-";
     const LIVE_SPORTS_CHANNELS = [
-      { name: "Sky Sports Football UK", id: 35, region: "United Kingdom" },
-      { name: "Sky Sports+ Plus", id: 36, region: "United Kingdom" },
-      { name: "Sky Sports Action UK", id: 37, region: "United Kingdom" },
-      { name: "Sky Sports Main Event", id: 38, region: "United Kingdom" },
-      { name: "Sky Sports Tennis UK", id: 46, region: "United Kingdom" },
-      { name: "Sky Sports Premier League", id: 130, region: "United Kingdom" },
-      { name: "Sky Sports F1 UK", id: 60, region: "United Kingdom" },
-      { name: "Sky Sports Cricket", id: 65, region: "United Kingdom" },
-      { name: "Sky Sports Golf UK", id: 70, region: "United Kingdom" },
-      { name: "Sky Sports News UK", id: 366, region: "United Kingdom" },
-      { name: "Sky Sports Mix UK", id: 449, region: "United Kingdom" },
-      { name: "Sky Sports Racing UK", id: 554, region: "United Kingdom" },
+      { name: "Sky Sports Football UK", id: 35, region: "United Kingdom", guideSid: 3096 },
+      { name: "Sky Sports+ Plus", id: 36, region: "United Kingdom", guideSid: 3097 },
+      { name: "Sky Sports Action UK", id: 37, region: "United Kingdom", guideSid: 1703 },
+      { name: "Sky Sports Main Event", id: 38, region: "United Kingdom", guideSid: 1701 },
+      { name: "Sky Sports Tennis UK", id: 46, region: "United Kingdom", guideSid: 1705 },
+      { name: "Sky Sports Premier League", id: 130, region: "United Kingdom", guideSid: 1010 },
+      { name: "Sky Sports F1 UK", id: 60, region: "United Kingdom", guideSid: 3835 },
+      { name: "Sky Sports Cricket", id: 65, region: "United Kingdom", guideSid: 1702 },
+      { name: "Sky Sports Golf UK", id: 70, region: "United Kingdom", guideSid: 1094 },
+      { name: "Sky Sports News UK", id: 366, region: "United Kingdom", guideSid: 1340 },
+      { name: "Sky Sports Mix UK", id: 449, region: "United Kingdom", guideSid: 4090 },
+      { name: "Sky Sports Racing UK", id: 554, region: "United Kingdom", guideSid: 4032 },
 
       { name: "Sky Sports 1 DE", id: 240, region: "Germany & Austria" },
       { name: "Sky Sports 2 DE", id: 241, region: "Germany & Austria" },
@@ -2681,6 +2885,8 @@
       loadingTV: false,
       loadingMovies: false,
       activePlayback: null,
+      liveScheduleChannel: null,
+      liveScheduleOffset: 0,
       lastProgressWrite: 0,
       pendingEpisodeAdvance: false,
       episodeAdvanceInFlight: false,
@@ -2734,6 +2940,13 @@
     const continueRow = el("continueRow");
     const liveSportsSection = el("liveSportsSection");
     const liveSportsContent = el("liveSportsContent");
+    const liveScheduleWrap = el("liveScheduleWrap");
+    const liveScheduleTitle = el("liveScheduleTitle");
+    const liveScheduleSubtitle = el("liveScheduleSubtitle");
+    const liveScheduleList = el("liveScheduleList");
+    const liveScheduleClose = el("liveScheduleClose");
+    const liveScheduleToday = el("liveScheduleToday");
+    const liveScheduleTomorrow = el("liveScheduleTomorrow");
     const accountButton = el("accountButton");
     const accountAvatar = el("accountAvatar");
     const accountLabel = el("accountLabel");
@@ -4043,18 +4256,25 @@
 
     function liveChannelMarkup(channel) {
       return `
-        <button class="live-channel-card" type="button" data-live-channel-id="${channel.id}"
-          aria-label="Watch ${escapeHtml(channel.name)} live">
-          <div class="live-channel-top">
-            <span class="live-badge">Live</span>
-            <span class="live-channel-id">ID ${channel.id}</span>
+        <div class="live-channel-tile">
+          <button class="live-channel-card" type="button" data-live-channel-id="${channel.id}"
+            aria-label="Watch ${escapeHtml(channel.name)} live">
+            <div class="live-channel-top">
+              <span class="live-badge">Live</span>
+              <span class="live-channel-id">ID ${channel.id}</span>
+            </div>
+            <div class="live-channel-name">${escapeHtml(channel.name)}</div>
+            <div class="live-channel-bottom">
+              <span>${escapeHtml(channel.region)}</span>
+              <span class="live-channel-watch">${ICONS.play}Watch</span>
+            </div>
+          </button>
+          <div class="live-channel-actions">
+            ${channel.guideSid
+              ? `<button class="live-guide-button" type="button" data-live-guide-id="${channel.id}">Schedule</button>`
+              : `<span class="live-guide-unavailable">Schedule unavailable</span>`}
           </div>
-          <div class="live-channel-name">${escapeHtml(channel.name)}</div>
-          <div class="live-channel-bottom">
-            <span>${escapeHtml(channel.region)}</span>
-            <span class="live-channel-watch">${ICONS.play}Watch</span>
-          </div>
-        </button>
+        </div>
       `;
     }
 
@@ -4097,6 +4317,103 @@
           if (channel) openLiveSportsChannel(channel);
         });
       });
+
+      liveSportsContent.querySelectorAll("[data-live-guide-id]").forEach(button => {
+        button.addEventListener("click", () => {
+          const channel = LIVE_SPORTS_CHANNELS.find(item =>
+            String(item.id) === String(button.dataset.liveGuideId)
+          );
+          if (channel) openLiveSchedule(channel);
+        });
+      });
+    }
+
+    function guideDate(offsetDays = 0) {
+      const parts = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/London",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }).formatToParts(new Date());
+      const part = type => parts.find(item => item.type === type)?.value || "";
+      const date = new Date(Date.UTC(Number(part("year")), Number(part("month")) - 1, Number(part("day"))));
+      date.setUTCDate(date.getUTCDate() + offsetDays);
+      return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+    }
+
+    function formatGuideTime(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "--:--";
+      return new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/London",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      }).format(date);
+    }
+
+    function closeLiveSchedule() {
+      liveScheduleWrap.classList.remove("open");
+      liveScheduleWrap.setAttribute("aria-hidden", "true");
+      state.liveScheduleChannel = null;
+      if (!playerScreen.classList.contains("open") && !modalWrap.classList.contains("open") && !authModalWrap.classList.contains("open")) {
+        document.body.style.overflow = "";
+      }
+    }
+
+    async function loadLiveSchedule(channel, offsetDays = 0) {
+      if (!channel?.guideSid) return;
+      const date = guideDate(offsetDays);
+      state.liveScheduleOffset = offsetDays;
+      liveScheduleToday.classList.toggle("active", offsetDays === 0);
+      liveScheduleTomorrow.classList.toggle("active", offsetDays === 1);
+      liveScheduleList.innerHTML = `<div class="live-schedule-status"><div class="spinner"></div> Loading schedule…</div>`;
+
+      try {
+        const data = await apiFetch(`/api/live-sports/schedule/${encodeURIComponent(channel.id)}?date=${encodeURIComponent(date)}`);
+        if (state.liveScheduleChannel?.id !== channel.id || state.liveScheduleOffset !== offsetDays) return;
+        const events = Array.isArray(data?.events) ? data.events : [];
+        const now = Date.now();
+
+        if (!events.length) {
+          liveScheduleList.innerHTML = `<div class="live-schedule-status">No listings were returned for this date.</div>`;
+          return;
+        }
+
+        liveScheduleList.innerHTML = events.map(event => {
+          const start = new Date(event.start).getTime();
+          const end = new Date(event.end).getTime();
+          const isNow = offsetDays === 0 && Number.isFinite(start) && Number.isFinite(end) && now >= start && now < end;
+          return `
+            <div class="live-schedule-item${isNow ? " now" : ""}">
+              <div class="live-schedule-time">${formatGuideTime(event.start)} – ${formatGuideTime(event.end)}</div>
+              <div>
+                <div class="live-schedule-title">${escapeHtml(event.title || "Untitled")}${isNow ? '<span class="live-schedule-now-badge">Now</span>' : ""}</div>
+                ${event.synopsis ? `<div class="live-schedule-synopsis">${escapeHtml(event.synopsis)}</div>` : ""}
+              </div>
+            </div>
+          `;
+        }).join("");
+
+        const current = liveScheduleList.querySelector(".live-schedule-item.now");
+        if (current) current.scrollIntoView({ block: "center" });
+      } catch (error) {
+        console.error("Live sports schedule failed", error);
+        if (state.liveScheduleChannel?.id !== channel.id || state.liveScheduleOffset !== offsetDays) return;
+        liveScheduleList.innerHTML = `<div class="live-schedule-status">Schedule could not be loaded right now. Try again shortly.</div>`;
+      }
+    }
+
+    function openLiveSchedule(channel) {
+      if (!channel?.guideSid) return;
+      state.liveScheduleChannel = channel;
+      state.liveScheduleOffset = 0;
+      document.body.style.overflow = "hidden";
+      liveScheduleTitle.textContent = channel.name;
+      liveScheduleSubtitle.textContent = "Times shown in UK time · Sky programme guide";
+      liveScheduleWrap.classList.add("open");
+      liveScheduleWrap.setAttribute("aria-hidden", "false");
+      loadLiveSchedule(channel, 0);
     }
 
     function showLiveSportsView(query = searchInput.value) {
@@ -4648,6 +4965,17 @@
     el("closeModal").addEventListener("click", closeModal);
     el("playerBack").addEventListener("click", () => closePlayer());
 
+    liveScheduleClose.addEventListener("click", closeLiveSchedule);
+    liveScheduleWrap.addEventListener("click", event => {
+      if (event.target === liveScheduleWrap) closeLiveSchedule();
+    });
+    liveScheduleToday.addEventListener("click", () => {
+      if (state.liveScheduleChannel) loadLiveSchedule(state.liveScheduleChannel, 0);
+    });
+    liveScheduleTomorrow.addEventListener("click", () => {
+      if (state.liveScheduleChannel) loadLiveSchedule(state.liveScheduleChannel, 1);
+    });
+
     modalWrap.addEventListener("click", event => {
       if (event.target === modalWrap) closeModal();
     });
@@ -4733,6 +5061,10 @@
       }
       if (authModalWrap.classList.contains("open")) {
         closeAuthModal();
+        return;
+      }
+      if (liveScheduleWrap.classList.contains("open")) {
+        closeLiveSchedule();
         return;
       }
       if (modalWrap.classList.contains("open")) closeModal();

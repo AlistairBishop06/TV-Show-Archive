@@ -18,6 +18,22 @@ const sql = neon(DATABASE_URL);
 const scryptAsync = promisify(crypto.scrypt);
 const app = express();
 const authAttempts = new Map();
+const liveSportsScheduleCache = new Map();
+const LIVE_SPORTS_SCHEDULE_CACHE_MS = 10 * 60 * 1000;
+const SKY_SPORTS_GUIDE_SIDS = new Map([
+  [35, 3096],  // Sky Sports Football
+  [36, 3097],  // Sky Sports+
+  [37, 1703],  // Sky Sports Action
+  [38, 1701],  // Sky Sports Main Event
+  [46, 1705],  // Sky Sports Tennis
+  [130, 1010], // Sky Sports Premier League
+  [60, 3835],  // Sky Sports F1
+  [65, 1702],  // Sky Sports Cricket
+  [70, 1094],  // Sky Sports Golf
+  [366, 1340], // Sky Sports News
+  [449, 4090], // Sky Sports Mix
+  [554, 4032]  // Sky Sports Racing
+]);
 
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
@@ -154,6 +170,7 @@ function authRateLimit(req, res, next) {
 
 async function requireAuth(req, res, next) {
   try {
+    await ensureSchemaReady();
     const token = readBearerToken(req);
     if (!token) return res.status(401).json({ error: "Sign in required." });
 
@@ -291,6 +308,99 @@ function watchRowToClient(row) {
   };
 }
 
+function findSkyScheduleEvents(payload) {
+  if (!payload) return [];
+  if (Array.isArray(payload?.events)) return payload.events;
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      const events = findSkyScheduleEvents(item);
+      if (events.length) return events;
+    }
+    return [];
+  }
+  if (typeof payload === "object") {
+    const preferredKeys = ["schedule", "schedules", "services", "channels", "data"];
+    for (const key of preferredKeys) {
+      if (!(key in payload)) continue;
+      const events = findSkyScheduleEvents(payload[key]);
+      if (events.length) return events;
+    }
+    for (const value of Object.values(payload)) {
+      if (!value || typeof value !== "object") continue;
+      const events = findSkyScheduleEvents(value);
+      if (events.length) return events;
+    }
+  }
+  return [];
+}
+
+function skyTimestampMs(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return NaN;
+  return numeric > 1e12 ? numeric : numeric * 1000;
+}
+
+function normaliseSkyScheduleEvent(raw) {
+  const startMs = skyTimestampMs(raw?.st ?? raw?.start ?? raw?.startTime ?? raw?.starttime);
+  if (!Number.isFinite(startMs)) return null;
+
+  let endMs = skyTimestampMs(raw?.end ?? raw?.et ?? raw?.endTime ?? raw?.endtime);
+  if (!Number.isFinite(endMs)) {
+    const duration = Number(raw?.d ?? raw?.duration ?? 0);
+    if (Number.isFinite(duration) && duration > 0) {
+      // Sky's HAWK guide exposes duration in seconds.
+      endMs = startMs + duration * 1000;
+    }
+  }
+  if (!Number.isFinite(endMs) || endMs <= startMs) return null;
+
+  const title = cleanText(raw?.t ?? raw?.title ?? raw?.name, 300) || "Untitled";
+  const synopsis = cleanText(raw?.sy ?? raw?.synopsis ?? raw?.description ?? raw?.desc, 2000);
+  return {
+    start: new Date(startMs).toISOString(),
+    end: new Date(endMs).toISOString(),
+    title,
+    synopsis
+  };
+}
+
+function validGuideDate(value) {
+  const text = String(value || "");
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
+}
+
+async function fetchSkySportsSchedule(streamId, guideSid, date) {
+  const cacheKey = `${streamId}:${date}`;
+  const cached = liveSportsScheduleCache.get(cacheKey);
+  if (cached && Date.now() - cached.savedAt < LIVE_SPORTS_SCHEDULE_CACHE_MS) {
+    return cached.events;
+  }
+
+  const skyDate = date.replaceAll("-", "");
+  const url = `https://awk.epgsky.com/hawk/linear/schedule/${skyDate}/${guideSid}`;
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json, text/javascript, */*",
+      "User-Agent": "ShowHub/1.0"
+    },
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!response.ok) {
+    const error = new Error(`Programme guide returned HTTP ${response.status}.`);
+    error.status = 502;
+    throw error;
+  }
+
+  const payload = await response.json();
+  const events = findSkyScheduleEvents(payload)
+    .map(normaliseSkyScheduleEvent)
+    .filter(Boolean)
+    .sort((a, b) => new Date(a.start) - new Date(b.start));
+
+  liveSportsScheduleCache.set(cacheKey, { savedAt: Date.now(), events });
+  return events;
+}
+
 async function ensureSchema() {
   await sql`
     CREATE TABLE IF NOT EXISTS users (
@@ -355,8 +465,21 @@ async function ensureSchema() {
   `;
 }
 
+let schemaReadyPromise = null;
+
+function ensureSchemaReady() {
+  if (!schemaReadyPromise) {
+    schemaReadyPromise = ensureSchema().catch(error => {
+      schemaReadyPromise = null;
+      throw error;
+    });
+  }
+  return schemaReadyPromise;
+}
+
 app.get("/api/health", async (_req, res, next) => {
   try {
+    await ensureSchemaReady();
     const rows = await sql`SELECT now() AS now`;
     res.json({ ok: true, database: true, now: rows[0]?.now });
   } catch (error) {
@@ -364,8 +487,30 @@ app.get("/api/health", async (_req, res, next) => {
   }
 });
 
+app.get("/api/live-sports/schedule/:streamId", async (req, res, next) => {
+  try {
+    const streamId = Number(req.params.streamId);
+    const guideSid = SKY_SPORTS_GUIDE_SIDS.get(streamId);
+    if (!guideSid) {
+      return res.status(404).json({ error: "A programme guide is not available for this channel." });
+    }
+
+    const requestedDate = validGuideDate(req.query.date);
+    if (!requestedDate) {
+      return res.status(400).json({ error: "Use a date in YYYY-MM-DD format." });
+    }
+
+    const events = await fetchSkySportsSchedule(streamId, guideSid, requestedDate);
+    res.setHeader("Cache-Control", "public, max-age=120, s-maxage=600, stale-while-revalidate=300");
+    res.json({ streamId, date: requestedDate, timezone: "Europe/London", events });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post("/api/auth/register", authRateLimit, async (req, res, next) => {
   try {
+    await ensureSchemaReady();
     const username = normaliseUsername(req.body?.username);
     const password = String(req.body?.password ?? "");
 
@@ -402,6 +547,7 @@ app.post("/api/auth/register", authRateLimit, async (req, res, next) => {
 
 app.post("/api/auth/login", authRateLimit, async (req, res, next) => {
   try {
+    await ensureSchemaReady();
     const username = normaliseUsername(req.body?.username);
     const password = String(req.body?.password ?? "");
 
@@ -533,8 +679,7 @@ app.use((error, _req, res, _next) => {
   });
 });
 
-await ensureSchema();
-
+// Database schema creation is lazy so public schedule requests do not wake Neon.
 // Vercel's Express runtime uses the default export.
 export default app;
 

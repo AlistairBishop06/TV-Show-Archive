@@ -4476,6 +4476,15 @@
       playerTitle.textContent = channel.name;
       playerSubtitle.textContent = `Live · ${channel.region}`;
       document.title = `${channel.name} | ShowHub`;
+
+      // Only live-sports embeds are sandboxed. The movie/TV provider detects
+      // sandboxed frames and refuses playback, so those launches explicitly
+      // remove this attribute in launchPlayer(). This live-stream sandbox keeps
+      // scripts/video working while withholding popup/top-navigation privileges.
+      playerFrame.setAttribute(
+        "sandbox",
+        "allow-scripts allow-same-origin allow-forms allow-presentation"
+      );
       playerFrame.src = `${LIVE_STREAM_BASE}${encodeURIComponent(channel.id)}.php`;
       playerScreen.classList.add("open");
       playerScreen.setAttribute("aria-hidden", "false");
@@ -4525,6 +4534,9 @@
         document.title = `${getMediaName(media)} | ShowHub`;
       }
 
+      // Movies and TV must not be sandboxed: the playback provider rejects
+      // sandboxed embeds ("Please Disable Sandbox").
+      playerFrame.removeAttribute("sandbox");
       playerFrame.src = url;
       playerScreen.classList.add("open");
       playerScreen.setAttribute("aria-hidden", "false");

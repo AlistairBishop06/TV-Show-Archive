@@ -2928,46 +2928,72 @@
 
   
 
-    /* Desktop card trailer previews. Loaded only after a short pointer hover. */
-    .poster-hover-trailer,
-    .continue-hover-trailer {
-      position: absolute;
-      inset: 0;
-      z-index: 1;
+    /* Desktop card trailer previews. The panel lives directly under <body> so
+       carousel overflow cannot clip it, and pointer-events stay on the card. */
+    .hover-trailer-preview {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 1100;
+      width: min(440px, calc(100vw - 32px));
       overflow: hidden;
-      border-radius: inherit;
-      background: #050507;
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 14px;
+      background: #111116;
+      box-shadow: 0 24px 70px rgba(0,0,0,.72), 0 0 0 1px rgba(0,0,0,.35);
       opacity: 0;
       pointer-events: none;
-      transition: opacity .22s ease;
+      transform: scale(.92);
+      transform-origin: center;
+      transition: opacity .2s ease, transform .24s cubic-bezier(.2,.75,.2,1);
     }
 
-    .poster-hover-trailer.visible,
-    .continue-hover-trailer.visible {
+    .hover-trailer-preview.visible {
       opacity: 1;
+      transform: scale(1);
     }
 
-    .poster-hover-trailer iframe,
-    .continue-hover-trailer iframe {
-      position: absolute;
-      top: 50%;
-      /* YouTube always draws its transient play/pause/previous/next chrome around
-         the centre of its own iframe. Keep the iframe oversized, then move that
-         centre outside the clipped poster while the video still fully covers it. */
-      left: 155%;
-      width: 360%;
-      height: 136%;
+    .hover-trailer-video {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      background: #050507;
+    }
+
+    .hover-trailer-video iframe {
+      display: block;
+      width: 100%;
+      height: 100%;
       border: 0;
       pointer-events: none;
-      transform: translate(-50%, -50%);
       background: #050507;
     }
 
-    .poster:has(.poster-hover-trailer.visible) > img,
-    .poster:has(.poster-hover-trailer.visible) > .poster-fallback,
-    .continue-poster:has(.continue-hover-trailer.visible) > img,
-    .continue-poster:has(.continue-hover-trailer.visible) > .continue-fallback {
-      opacity: 0;
+    .hover-trailer-details {
+      min-height: 66px;
+      padding: 12px 15px 14px;
+      background: linear-gradient(180deg, #17171d, #111116);
+    }
+
+    .hover-trailer-title {
+      overflow: hidden;
+      color: #f2f2f4;
+      font-size: .98rem;
+      font-weight: 780;
+      letter-spacing: -.015em;
+      line-height: 1.25;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .hover-trailer-meta {
+      overflow: hidden;
+      margin-top: 5px;
+      color: #92939d;
+      font-size: .76rem;
+      line-height: 1.3;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .poster > img,
@@ -2986,8 +3012,7 @@
     }
 
     @media (hover: none), (pointer: coarse), (prefers-reduced-motion: reduce) {
-      .poster-hover-trailer,
-      .continue-hover-trailer {
+      .hover-trailer-preview {
         display: none !important;
       }
     }
@@ -3478,7 +3503,7 @@
       </div>
       <section class="profile-card profile-wide-card">
         <div id="discoverListIndex">
-          <div class="profile-card-head"><div><h2>Public Lists</h2><p>See what other people are collecting and watching.</p></div><button id="discoverListsRefresh" class="btn btn-secondary" type="button">Refresh</button></div>
+          <div class="profile-card-head"><div><h2>Public Lists</h2><p>Explore public collections shared by TV Archive users, including your own.</p></div><button id="discoverListsRefresh" class="btn btn-secondary" type="button">Refresh</button></div>
           <div id="discoverListsContainer" class="discover-list-stack"></div>
         </div>
         <div id="discoverListDetail" hidden>
@@ -3662,7 +3687,7 @@
       <button id="authClose" class="auth-close icon-btn" type="button" aria-label="Close sign in">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
       </button>
-      <<img class="brand-logo" src="./assets/tv-archive-logo.png" alt="TV Archive" />
+      <img class="brand-logo" src="./assets/tv-archive-logo.png" alt="TV Archive" />
       <h2 id="authTitle">Welcome back</h2>
       <p id="authSubtitle">Sign in to access your saved progress, Watch Later and lists.</p>
 
@@ -3699,8 +3724,12 @@
     let hoverTrailerCard = null;
     let hoverTrailerTimer = 0;
     let hoverTrailerRequestId = 0;
-    const HOVER_TRAILER_DELAY_MS = 450;
+    const HOVER_TRAILER_DELAY_MS = 100;
     const CARD_TRAILERS_ENABLED = window.matchMedia("(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)").matches;
+    const hoverTrailerPreview = document.createElement("div");
+    hoverTrailerPreview.className = "hover-trailer-preview";
+    hoverTrailerPreview.setAttribute("aria-hidden", "true");
+    document.body.appendChild(hoverTrailerPreview);
     const HOME_PAGE_BATCH = 1;
     const WATCH_HISTORY_KEY = "showhub-watch-history-v2";
     const PENDING_WATCH_HISTORY_KEY_PREFIX = "showhub-pending-watch-progress-v1";
@@ -5235,7 +5264,7 @@
               aria-label="Remove ${escapeHtml(entry.name)} from Currently Watching"
               title="Remove from Currently Watching"
             >${ICONS.close}</button>
-            <div class="continue-poster">${poster}<div class="continue-hover-trailer" aria-hidden="true"></div></div>
+            <div class="continue-poster">${poster}</div>
             <div class="continue-body">
               <div class="continue-title">${escapeHtml(entry.name)}</div>
               <div class="continue-episode">${escapeHtml(detailLabel)}</div>
@@ -5395,7 +5424,6 @@
           <div class="poster">
             <div class="media-type-badge">${type === "movie" ? "MOVIE" : "TV"}</div>
             ${posterMarkup(media)}
-            <div class="poster-hover-trailer" aria-hidden="true"></div>
           </div>
           <div class="card-body-inline">
             <div class="card-title">${escapeHtml(getMediaName(media))}</div>
@@ -5949,8 +5977,36 @@
       return (trailer || valid[0])?.id || "";
     }
 
-    function hoverTrailerLayer(card) {
-      return card?.querySelector?.(".poster-hover-trailer, .continue-hover-trailer") || null;
+    function hoverTrailerLayer() {
+      return hoverTrailerPreview;
+    }
+
+    function positionHoverTrailer(card) {
+      if (!card?.isConnected) return;
+
+      const anchor = card.querySelector(".poster, .continue-poster") || card;
+      const anchorRect = anchor.getBoundingClientRect();
+      const viewportPadding = 16;
+      const width = Math.min(440, window.innerWidth - (viewportPadding * 2));
+      const height = hoverTrailerPreview.offsetHeight || ((width * 9 / 16) + 66);
+      const left = Math.max(
+        viewportPadding,
+        Math.min(
+          window.innerWidth - width - viewportPadding,
+          anchorRect.left + (anchorRect.width - width) / 2
+        )
+      );
+      const top = Math.max(
+        viewportPadding,
+        Math.min(
+          window.innerHeight - height - viewportPadding,
+          anchorRect.top + (anchorRect.height - height) / 2
+        )
+      );
+
+      hoverTrailerPreview.style.width = `${width}px`;
+      hoverTrailerPreview.style.left = `${left}px`;
+      hoverTrailerPreview.style.top = `${top}px`;
     }
 
     function stopHoverTrailer(card = hoverTrailerCard) {
@@ -5961,9 +6017,10 @@
       hoverTrailerRequestId += 1;
 
       const target = card || hoverTrailerCard;
-      const layer = hoverTrailerLayer(target);
+      const layer = hoverTrailerLayer();
       if (layer) {
         layer.classList.remove("visible");
+        layer.setAttribute("aria-hidden", "true");
         layer.replaceChildren();
       }
 
@@ -5972,7 +6029,7 @@
 
     function bindHoverTrailer(card, media) {
       if (!CARD_TRAILERS_ENABLED || !card || !media) return;
-      const layer = hoverTrailerLayer(card);
+      const layer = hoverTrailerLayer();
       if (!layer) return;
 
       card.addEventListener("mouseenter", () => {
@@ -5980,6 +6037,7 @@
         if (hoverTrailerTimer) clearTimeout(hoverTrailerTimer);
 
         hoverTrailerCard = card;
+        positionHoverTrailer(card);
         const requestId = ++hoverTrailerRequestId;
         hoverTrailerTimer = window.setTimeout(async () => {
           hoverTrailerTimer = 0;
@@ -6004,17 +6062,55 @@
               frame.remove();
               return;
             }
+            positionHoverTrailer(card);
+            layer.setAttribute("aria-hidden", "false");
             layer.classList.add("visible");
           };
-          frame._trailerHide = () => layer.classList.remove("visible");
+          frame._trailerHide = () => {
+            layer.classList.remove("visible");
+            layer.setAttribute("aria-hidden", "true");
+          };
           frame.onload = () => listenToTrailerFrame(frame);
           frame.src = trailerEmbedUrl(videoId);
-          layer.replaceChildren(frame);
+
+          const video = document.createElement("div");
+          video.className = "hover-trailer-video";
+          video.appendChild(frame);
+
+          const details = document.createElement("div");
+          details.className = "hover-trailer-details";
+
+          const title = document.createElement("div");
+          title.className = "hover-trailer-title";
+          title.textContent = card.querySelector(".card-title, .continue-title")?.textContent?.trim() || getMediaName(media);
+
+          const meta = document.createElement("div");
+          meta.className = "hover-trailer-meta";
+          const metaParts = [...card.querySelectorAll(".card-meta, .continue-episode, .continue-time")]
+            .map(item => item.textContent.trim())
+            .filter(Boolean);
+          meta.textContent = metaParts.join(" · ");
+
+          details.append(title);
+          if (meta.textContent) details.append(meta);
+          layer.replaceChildren(video, details);
         }, HOVER_TRAILER_DELAY_MS);
       });
 
       card.addEventListener("mouseleave", () => stopHoverTrailer(card));
     }
+
+    window.addEventListener("resize", () => {
+      if (hoverTrailerCard && hoverTrailerPreview.classList.contains("visible")) {
+        positionHoverTrailer(hoverTrailerCard);
+      }
+    });
+
+    document.addEventListener("scroll", () => {
+      if (hoverTrailerCard && hoverTrailerPreview.classList.contains("visible")) {
+        positionHoverTrailer(hoverTrailerCard);
+      }
+    }, true);
 
     function updateTrailerSoundButtons() {
       const icon = trailersMuted ? ICONS.volumeOff : ICONS.volumeOn;
@@ -6070,8 +6166,7 @@
       frame.dataset.trailerRevealed = "1";
       const revealToken = String(Number(frame.dataset.revealToken || 0) + 1);
       frame.dataset.revealToken = revealToken;
-      // The iframe's control centre is positioned outside the clipped trailer
-      // viewport, so only a very short paint delay is needed before revealing.
+      // Give the player a short paint delay before revealing the trailer.
       window.setTimeout(() => {
         if (frame.dataset.revealToken !== revealToken || frame.dataset.trailerRevealed !== "1") return;
         if (!frame.isConnected && frame !== heroTrailer && frame !== modalTrailer) return;
@@ -6088,7 +6183,7 @@
       }
       if (!payload || typeof payload !== "object") return;
 
-      const frames = [heroTrailer, modalTrailer, ...document.querySelectorAll(".poster-hover-trailer iframe, .continue-hover-trailer iframe")];
+      const frames = [heroTrailer, modalTrailer, ...document.querySelectorAll(".hover-trailer-preview iframe")];
       const frame = frames.find(candidate => candidate?.contentWindow === event.source);
       if (!frame) return;
 
@@ -6102,8 +6197,7 @@
       if (playerState === 1) {
         revealTrailerFrame(frame);
       } else if (playerState === 0) {
-        // Loop in code. YouTube's centre chrome is outside the clipped viewport,
-        // so there is no need to blank the trailer while rewinding.
+        // Loop in code without blanking the preview while it rewinds.
         trailerFrameCommand(frame, "seekTo", [0, true]);
         window.setTimeout(() => trailerFrameCommand(frame, "playVideo"), 60);
       }

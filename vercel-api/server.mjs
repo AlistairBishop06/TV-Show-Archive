@@ -831,7 +831,7 @@ app.get("/api/lists/discover", requireAuth, async (req, res, next) => {
       FROM user_lists l
       JOIN users u ON u.id = l.user_id
       LEFT JOIN list_items i ON i.list_id = l.id
-      WHERE l.is_public = true AND l.user_id <> ${req.user.id}
+      WHERE l.is_public = true
       GROUP BY l.id, u.username
       ORDER BY l.updated_at DESC
       LIMIT 60

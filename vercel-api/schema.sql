@@ -2,9 +2,12 @@ CREATE TABLE IF NOT EXISTS users (
   id uuid PRIMARY KEY,
   username text NOT NULL UNIQUE,
   password_hash text NOT NULL,
+  profile_picture text NOT NULL DEFAULT '',
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture text NOT NULL DEFAULT '';
 
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_unique
   ON users (lower(username));
@@ -41,3 +44,47 @@ CREATE TABLE IF NOT EXISTS watch_history (
 
 CREATE INDEX IF NOT EXISTS watch_history_user_last_watched_idx
   ON watch_history(user_id, last_watched DESC);
+
+CREATE TABLE IF NOT EXISTS watch_later (
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  imdb_id text NOT NULL,
+  media_type text NOT NULL CHECK (media_type IN ('tv', 'movie')),
+  show_id integer,
+  name text NOT NULL,
+  poster text NOT NULL DEFAULT '',
+  backdrop text NOT NULL DEFAULT '',
+  summary text NOT NULL DEFAULT '',
+  year text NOT NULL DEFAULT '',
+  added_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, imdb_id)
+);
+
+CREATE INDEX IF NOT EXISTS watch_later_user_added_idx ON watch_later(user_id, added_at DESC);
+
+CREATE TABLE IF NOT EXISTS user_lists (
+  id uuid PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  is_public boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS user_lists_user_name_unique ON user_lists(user_id, lower(name));
+CREATE INDEX IF NOT EXISTS user_lists_public_idx ON user_lists(is_public, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS list_items (
+  list_id uuid NOT NULL REFERENCES user_lists(id) ON DELETE CASCADE,
+  imdb_id text NOT NULL,
+  media_type text NOT NULL CHECK (media_type IN ('tv', 'movie')),
+  show_id integer,
+  name text NOT NULL,
+  poster text NOT NULL DEFAULT '',
+  backdrop text NOT NULL DEFAULT '',
+  summary text NOT NULL DEFAULT '',
+  year text NOT NULL DEFAULT '',
+  added_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (list_id, imdb_id)
+);
+
+CREATE INDEX IF NOT EXISTS list_items_list_added_idx ON list_items(list_id, added_at DESC);

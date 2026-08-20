@@ -37,7 +37,7 @@ const SKY_SPORTS_GUIDE_SIDS = new Map([
 
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
-app.use(express.json({ limit: "64kb" }));
+app.use(express.json({ limit: "512kb" }));
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -68,7 +68,7 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
   }
 
   if (req.method === "OPTIONS") {
@@ -176,7 +176,7 @@ async function requireAuth(req, res, next) {
 
     const tokenHash = sessionHash(token);
     const rows = await sql`
-      SELECT u.id, u.username, s.token_hash
+      SELECT u.id, u.username, u.created_at, u.profile_picture, s.token_hash
       FROM sessions s
       JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ${tokenHash}
@@ -189,7 +189,9 @@ async function requireAuth(req, res, next) {
 
     req.user = {
       id: row.id,
-      username: row.username
+      username: row.username,
+      created_at: row.created_at,
+      profile_picture: row.profile_picture || ""
     };
     req.sessionTokenHash = row.token_hash;
     next();
@@ -201,7 +203,9 @@ async function requireAuth(req, res, next) {
 function serialiseUser(user) {
   return {
     id: user.id,
-    username: user.username
+    username: user.username,
+    createdAt: user.created_at || user.createdAt || null,
+    profilePicture: user.profile_picture || user.profilePicture || ""
   };
 }
 
@@ -214,6 +218,50 @@ function nullableInteger(value) {
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isInteger(number) ? number : null;
+}
+
+function normaliseLibraryItem(body) {
+  const imdbId = cleanText(body?.imdbId, 64);
+  if (!/^tt\d+$/i.test(imdbId)) {
+    const error = new Error("Invalid IMDb identifier.");
+    error.status = 400;
+    throw error;
+  }
+  const mediaType = body?.mediaType === "movie" ? "movie" : "tv";
+  return {
+    imdbId,
+    mediaType,
+    showId: mediaType === "tv" ? nullableInteger(body?.showId) : null,
+    name: cleanText(body?.name, 250) || "Untitled",
+    poster: cleanText(body?.poster, 2000),
+    backdrop: cleanText(body?.backdrop, 2000),
+    summary: cleanText(body?.summary, 8000),
+    year: cleanText(body?.year, 32)
+  };
+}
+
+function libraryRowToClient(row) {
+  return {
+    imdbId: row.imdb_id,
+    mediaType: row.media_type,
+    showId: row.show_id,
+    name: row.name,
+    poster: row.poster || "",
+    backdrop: row.backdrop || "",
+    summary: row.summary || "",
+    year: row.year || "",
+    addedAt: row.added_at ? new Date(row.added_at).getTime() : null
+  };
+}
+
+function normaliseListName(value) {
+  const name = cleanText(value, 60);
+  if (!name) {
+    const error = new Error("List name is required.");
+    error.status = 400;
+    throw error;
+  }
+  return name;
 }
 
 function normaliseWatchEntry(body) {
@@ -424,6 +472,7 @@ async function ensureSchema() {
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_unique ON users (lower(username))`;
   await sql`ALTER TABLE users DROP COLUMN IF EXISTS email`;
   await sql`ALTER TABLE users DROP COLUMN IF EXISTS display_name`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture text NOT NULL DEFAULT ''`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -463,6 +512,53 @@ async function ensureSchema() {
     CREATE INDEX IF NOT EXISTS watch_history_user_last_watched_idx
     ON watch_history(user_id, last_watched DESC)
   `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS watch_later (
+      user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      imdb_id text NOT NULL,
+      media_type text NOT NULL CHECK (media_type IN ('tv', 'movie')),
+      show_id integer,
+      name text NOT NULL,
+      poster text NOT NULL DEFAULT '',
+      backdrop text NOT NULL DEFAULT '',
+      summary text NOT NULL DEFAULT '',
+      year text NOT NULL DEFAULT '',
+      added_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (user_id, imdb_id)
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS watch_later_user_added_idx ON watch_later(user_id, added_at DESC)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS user_lists (
+      id uuid PRIMARY KEY,
+      user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name text NOT NULL,
+      is_public boolean NOT NULL DEFAULT true,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS user_lists_user_name_unique ON user_lists(user_id, lower(name))`;
+  await sql`CREATE INDEX IF NOT EXISTS user_lists_public_idx ON user_lists(is_public, updated_at DESC)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS list_items (
+      list_id uuid NOT NULL REFERENCES user_lists(id) ON DELETE CASCADE,
+      imdb_id text NOT NULL,
+      media_type text NOT NULL CHECK (media_type IN ('tv', 'movie')),
+      show_id integer,
+      name text NOT NULL,
+      poster text NOT NULL DEFAULT '',
+      backdrop text NOT NULL DEFAULT '',
+      summary text NOT NULL DEFAULT '',
+      year text NOT NULL DEFAULT '',
+      added_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (list_id, imdb_id)
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS list_items_list_added_idx ON list_items(list_id, added_at DESC)`;
 }
 
 let schemaReadyPromise = null;
@@ -526,11 +622,14 @@ app.post("/api/auth/register", authRateLimit, async (req, res, next) => {
     const userId = crypto.randomUUID();
     const passwordHash = await hashPassword(password);
 
+    let createdUser;
     try {
-      await sql`
+      const createdRows = await sql`
         INSERT INTO users (id, username, password_hash)
         VALUES (${userId}, ${username}, ${passwordHash})
+        RETURNING id, username, created_at, profile_picture
       `;
+      createdUser = createdRows[0];
     } catch (error) {
       if (error?.code === "23505") {
         return res.status(409).json({ error: "That username is already taken." });
@@ -539,7 +638,7 @@ app.post("/api/auth/register", authRateLimit, async (req, res, next) => {
     }
 
     const token = await createSession(userId);
-    res.status(201).json({ user: { id: userId, username }, token });
+    res.status(201).json({ user: serialiseUser(createdUser || { id: userId, username }), token });
   } catch (error) {
     next(error);
   }
@@ -552,7 +651,7 @@ app.post("/api/auth/login", authRateLimit, async (req, res, next) => {
     const password = String(req.body?.password ?? "");
 
     const rows = await sql`
-      SELECT id, username, password_hash
+      SELECT id, username, password_hash, created_at, profile_picture
       FROM users
       WHERE lower(username) = ${username}
       LIMIT 1
@@ -582,6 +681,281 @@ app.post("/api/auth/logout", requireAuth, async (req, res, next) => {
 
 app.get("/api/auth/me", requireAuth, (req, res) => {
   res.json({ user: serialiseUser(req.user) });
+});
+
+app.patch("/api/account/username", authRateLimit, requireAuth, async (req, res, next) => {
+  try {
+    const username = normaliseUsername(req.body?.username);
+    const currentPassword = String(req.body?.currentPassword ?? "");
+
+    if (!validUsername(username)) {
+      return res.status(400).json({
+        error: "Username must be 3–30 characters using letters, numbers, dots, underscores, or hyphens."
+      });
+    }
+    if (!currentPassword) {
+      return res.status(400).json({ error: "Enter your current password." });
+    }
+
+    const rows = await sql`
+      SELECT password_hash
+      FROM users
+      WHERE id = ${req.user.id}
+      LIMIT 1
+    `;
+    const passwordOk = rows[0] ? await verifyPassword(currentPassword, rows[0].password_hash) : false;
+    if (!passwordOk) {
+      return res.status(401).json({ error: "Current password is incorrect." });
+    }
+
+    try {
+      const updated = await sql`
+        UPDATE users
+        SET username = ${username}, updated_at = now()
+        WHERE id = ${req.user.id}
+        RETURNING id, username, created_at, profile_picture
+      `;
+      res.json({ user: serialiseUser(updated[0]) });
+    } catch (error) {
+      if (error?.code === "23505") {
+        return res.status(409).json({ error: "That username is already taken." });
+      }
+      throw error;
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/account/password", authRateLimit, requireAuth, async (req, res, next) => {
+  try {
+    const currentPassword = String(req.body?.currentPassword ?? "");
+    const newPassword = String(req.body?.newPassword ?? "");
+
+    if (!currentPassword) {
+      return res.status(400).json({ error: "Enter your current password." });
+    }
+    if (newPassword.length < 8 || newPassword.length > 128) {
+      return res.status(400).json({ error: "New password must be between 8 and 128 characters." });
+    }
+
+    const rows = await sql`
+      SELECT password_hash
+      FROM users
+      WHERE id = ${req.user.id}
+      LIMIT 1
+    `;
+    const passwordOk = rows[0] ? await verifyPassword(currentPassword, rows[0].password_hash) : false;
+    if (!passwordOk) {
+      return res.status(401).json({ error: "Current password is incorrect." });
+    }
+
+    const passwordHash = await hashPassword(newPassword);
+    await sql`
+      UPDATE users
+      SET password_hash = ${passwordHash}, updated_at = now()
+      WHERE id = ${req.user.id}
+    `;
+
+    // Keep the current device signed in, but invalidate older sessions elsewhere.
+    await sql`
+      DELETE FROM sessions
+      WHERE user_id = ${req.user.id}
+        AND token_hash <> ${req.sessionTokenHash}
+    `;
+
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/account/profile-picture", requireAuth, async (req, res, next) => {
+  try {
+    const imageData = String(req.body?.imageData || "");
+    if (imageData) {
+      if (!/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(imageData)) {
+        return res.status(400).json({ error: "Upload a JPEG, PNG, or WebP image." });
+      }
+      if (Buffer.byteLength(imageData, "utf8") > 400000) {
+        return res.status(413).json({ error: "Profile picture is too large." });
+      }
+    }
+    const rows = await sql`
+      UPDATE users
+      SET profile_picture = ${imageData}, updated_at = now()
+      WHERE id = ${req.user.id}
+      RETURNING id, username, created_at, profile_picture
+    `;
+    res.json({ user: serialiseUser(rows[0]) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/watch-later", requireAuth, async (req, res, next) => {
+  try {
+    const rows = await sql`SELECT * FROM watch_later WHERE user_id = ${req.user.id} ORDER BY added_at DESC`;
+    res.json({ entries: rows.map(libraryRowToClient) });
+  } catch (error) { next(error); }
+});
+
+app.put("/api/watch-later/:imdbId", requireAuth, async (req, res, next) => {
+  try {
+    const item = normaliseLibraryItem({ ...req.body, imdbId: req.params.imdbId });
+    await sql`
+      INSERT INTO watch_later (user_id, imdb_id, media_type, show_id, name, poster, backdrop, summary, year)
+      VALUES (${req.user.id}, ${item.imdbId}, ${item.mediaType}, ${item.showId}, ${item.name}, ${item.poster}, ${item.backdrop}, ${item.summary}, ${item.year})
+      ON CONFLICT (user_id, imdb_id) DO UPDATE SET
+        media_type = EXCLUDED.media_type, show_id = EXCLUDED.show_id, name = EXCLUDED.name,
+        poster = EXCLUDED.poster, backdrop = EXCLUDED.backdrop, summary = EXCLUDED.summary,
+        year = EXCLUDED.year, added_at = now()
+    `;
+    res.json({ entry: { ...item, addedAt: Date.now() } });
+  } catch (error) { next(error); }
+});
+
+app.delete("/api/watch-later/:imdbId", requireAuth, async (req, res, next) => {
+  try {
+    const imdbId = cleanText(req.params.imdbId, 64);
+    await sql`DELETE FROM watch_later WHERE user_id = ${req.user.id} AND imdb_id = ${imdbId}`;
+    res.status(204).end();
+  } catch (error) { next(error); }
+});
+
+app.get("/api/lists/discover", requireAuth, async (req, res, next) => {
+  try {
+    const rows = await sql`
+      SELECT l.id, l.name, l.is_public, l.created_at, l.updated_at, u.username,
+             COUNT(i.imdb_id)::int AS item_count
+      FROM user_lists l
+      JOIN users u ON u.id = l.user_id
+      LEFT JOIN list_items i ON i.list_id = l.id
+      WHERE l.is_public = true AND l.user_id <> ${req.user.id}
+      GROUP BY l.id, u.username
+      ORDER BY l.updated_at DESC
+      LIMIT 60
+    `;
+    res.json({ lists: rows.map(row => ({
+      id: row.id, name: row.name, isPublic: true, owner: row.username,
+      itemCount: Number(row.item_count || 0), createdAt: row.created_at, updatedAt: row.updated_at
+    })) });
+  } catch (error) { next(error); }
+});
+
+app.get("/api/lists/:listId/browse", requireAuth, async (req, res, next) => {
+  try {
+    const rows = await sql`
+      SELECT l.id, l.name, l.is_public, l.user_id, l.created_at, l.updated_at, u.username
+      FROM user_lists l JOIN users u ON u.id = l.user_id
+      WHERE l.id::text = ${cleanText(req.params.listId, 64)}
+      LIMIT 1
+    `;
+    const list = rows[0];
+    if (!list || (!list.is_public && String(list.user_id) !== String(req.user.id))) {
+      return res.status(404).json({ error: "List not found." });
+    }
+    const items = await sql`SELECT * FROM list_items WHERE list_id = ${list.id} ORDER BY added_at DESC`;
+    res.json({
+      list: { id: list.id, name: list.name, isPublic: Boolean(list.is_public), owner: list.username, createdAt: list.created_at, updatedAt: list.updated_at },
+      items: items.map(libraryRowToClient)
+    });
+  } catch (error) { next(error); }
+});
+
+app.get("/api/lists", requireAuth, async (req, res, next) => {
+  try {
+    const lists = await sql`
+      SELECT id, name, is_public, created_at, updated_at
+      FROM user_lists WHERE user_id = ${req.user.id} ORDER BY updated_at DESC
+    `;
+    const items = await sql`
+      SELECT i.* FROM list_items i JOIN user_lists l ON l.id = i.list_id
+      WHERE l.user_id = ${req.user.id} ORDER BY i.added_at DESC
+    `;
+    res.json({ lists: lists.map(list => ({
+      id: list.id, name: list.name, isPublic: Boolean(list.is_public),
+      createdAt: list.created_at, updatedAt: list.updated_at,
+      items: items.filter(item => String(item.list_id) === String(list.id)).map(libraryRowToClient)
+    })) });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/lists", requireAuth, async (req, res, next) => {
+  try {
+    const name = normaliseListName(req.body?.name);
+    const isPublic = req.body?.isPublic !== false;
+    try {
+      const rows = await sql`
+        INSERT INTO user_lists (id, user_id, name, is_public)
+        VALUES (${crypto.randomUUID()}, ${req.user.id}, ${name}, ${isPublic})
+        RETURNING id, name, is_public, created_at, updated_at
+      `;
+      const list = rows[0];
+      res.status(201).json({ list: { id: list.id, name: list.name, isPublic: Boolean(list.is_public), createdAt: list.created_at, updatedAt: list.updated_at, items: [] } });
+    } catch (error) {
+      if (error?.code === "23505") return res.status(409).json({ error: "You already have a list with that name." });
+      throw error;
+    }
+  } catch (error) { next(error); }
+});
+
+app.patch("/api/lists/:listId", requireAuth, async (req, res, next) => {
+  try {
+    const name = normaliseListName(req.body?.name);
+    const isPublic = req.body?.isPublic !== false;
+    try {
+      const rows = await sql`
+        UPDATE user_lists SET name = ${name}, is_public = ${isPublic}, updated_at = now()
+        WHERE id::text = ${cleanText(req.params.listId, 64)} AND user_id = ${req.user.id}
+        RETURNING id, name, is_public, created_at, updated_at
+      `;
+      if (!rows[0]) return res.status(404).json({ error: "List not found." });
+      const list = rows[0];
+      res.json({ list: { id: list.id, name: list.name, isPublic: Boolean(list.is_public), createdAt: list.created_at, updatedAt: list.updated_at } });
+    } catch (error) {
+      if (error?.code === "23505") return res.status(409).json({ error: "You already have a list with that name." });
+      throw error;
+    }
+  } catch (error) { next(error); }
+});
+
+app.delete("/api/lists/:listId", requireAuth, async (req, res, next) => {
+  try {
+    await sql`DELETE FROM user_lists WHERE id::text = ${cleanText(req.params.listId, 64)} AND user_id = ${req.user.id}`;
+    res.status(204).end();
+  } catch (error) { next(error); }
+});
+
+app.put("/api/lists/:listId/items/:imdbId", requireAuth, async (req, res, next) => {
+  try {
+    const listRows = await sql`SELECT id FROM user_lists WHERE id::text = ${cleanText(req.params.listId, 64)} AND user_id = ${req.user.id} LIMIT 1`;
+    if (!listRows[0]) return res.status(404).json({ error: "List not found." });
+    const item = normaliseLibraryItem({ ...req.body, imdbId: req.params.imdbId });
+    await sql`
+      INSERT INTO list_items (list_id, imdb_id, media_type, show_id, name, poster, backdrop, summary, year)
+      VALUES (${listRows[0].id}, ${item.imdbId}, ${item.mediaType}, ${item.showId}, ${item.name}, ${item.poster}, ${item.backdrop}, ${item.summary}, ${item.year})
+      ON CONFLICT (list_id, imdb_id) DO UPDATE SET
+        media_type = EXCLUDED.media_type, show_id = EXCLUDED.show_id, name = EXCLUDED.name,
+        poster = EXCLUDED.poster, backdrop = EXCLUDED.backdrop, summary = EXCLUDED.summary,
+        year = EXCLUDED.year, added_at = now()
+    `;
+    await sql`UPDATE user_lists SET updated_at = now() WHERE id = ${listRows[0].id}`;
+    res.json({ item: { ...item, addedAt: Date.now() } });
+  } catch (error) { next(error); }
+});
+
+app.delete("/api/lists/:listId/items/:imdbId", requireAuth, async (req, res, next) => {
+  try {
+    const listId = cleanText(req.params.listId, 64);
+    const imdbId = cleanText(req.params.imdbId, 64);
+    await sql`
+      DELETE FROM list_items i USING user_lists l
+      WHERE i.list_id = l.id AND l.id::text = ${listId} AND l.user_id = ${req.user.id} AND i.imdb_id = ${imdbId}
+    `;
+    await sql`UPDATE user_lists SET updated_at = now() WHERE id::text = ${listId} AND user_id = ${req.user.id}`;
+    res.status(204).end();
+  } catch (error) { next(error); }
 });
 
 app.get("/api/playback-url", requireAuth, (req, res) => {
@@ -646,6 +1020,15 @@ app.post("/api/watch-history/sync", requireAuth, async (req, res, next) => {
       await upsertWatchEntry(req.user.id, entry);
     }
     res.json({ ok: true, synced: incoming.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/watch-history", requireAuth, async (req, res, next) => {
+  try {
+    await sql`DELETE FROM watch_history WHERE user_id = ${req.user.id}`;
+    res.status(204).end();
   } catch (error) {
     next(error);
   }

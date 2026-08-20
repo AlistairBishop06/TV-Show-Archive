@@ -1108,6 +1108,42 @@
       color: #83848d;
     }
 
+    .discover-top-button {
+      flex: 0 0 auto;
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 13px;
+      border: 1px solid rgba(255,255,255,.085);
+      border-radius: 9px;
+      background: rgba(255,255,255,.045);
+      color: #d8d8dd;
+      cursor: pointer;
+      font-size: .84rem;
+      font-weight: 760;
+      white-space: nowrap;
+      transition: border-color .16s ease, background .16s ease, color .16s ease, transform .16s ease;
+    }
+
+    .discover-top-button .icon {
+      width: 17px;
+      height: 17px;
+    }
+
+    .discover-top-button:hover {
+      border-color: rgba(238,223,53,.38);
+      background: rgba(238,223,53,.075);
+      color: #fff;
+    }
+
+    .discover-top-button.active {
+      border-color: rgba(238,223,53,.58);
+      background: var(--accent-2);
+      color: #08090c;
+    }
+
     main.app-shell {
       padding-top: 18px;
     }
@@ -1802,6 +1838,16 @@
         height: 37px;
       }
 
+      .discover-top-button {
+        width: 37px;
+        height: 37px;
+        padding: 0;
+      }
+
+      .discover-top-button span {
+        display: none;
+      }
+
       main.app-shell {
         padding-top: 12px;
       }
@@ -2085,26 +2131,6 @@
       text-overflow: ellipsis;
     }
 
-    .account-sync-line {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 11px 10px 8px;
-      color: #a4a5ad;
-      font-size: .75rem;
-    }
-
-    .account-sync-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: #57d38c;
-      box-shadow: 0 0 0 3px rgba(87,211,140,.10);
-    }
-
-    .account-sync-dot.syncing { background: #d9b95d; box-shadow: 0 0 0 3px rgba(217,185,93,.10); }
-    .account-sync-dot.error { background: #ff6b76; box-shadow: 0 0 0 3px rgba(255,107,118,.10); }
-
     .account-menu > button {
       width: 100%;
       border: 0;
@@ -2118,6 +2144,301 @@
     }
 
     .account-menu > button:hover { background: rgba(255,255,255,.06); }
+
+    .profile-section {
+      padding: 38px 0 72px;
+    }
+
+    .profile-page-head {
+      display: grid;
+      gap: 24px;
+      margin-bottom: 28px;
+    }
+
+    .profile-page-head h1 {
+      margin: 5px 0 8px;
+      font-size: clamp(2.2rem, 5vw, 4rem);
+      line-height: .98;
+      letter-spacing: -.055em;
+    }
+
+    .profile-page-head p,
+    .profile-card p {
+      margin: 0;
+      color: #91939d;
+      line-height: 1.55;
+    }
+
+    .profile-back {
+      justify-self: start;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: #d6d6dc;
+      cursor: pointer;
+      font-weight: 740;
+    }
+
+    .profile-back:hover { color: var(--accent-2); }
+
+    .profile-layout {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .profile-card,
+    .profile-stat {
+      border: 1px solid rgba(255,255,255,.08);
+      background: linear-gradient(145deg, rgba(18,18,22,.98), rgba(10,10,13,.98));
+      box-shadow: 0 18px 50px rgba(0,0,0,.22);
+    }
+
+    .profile-card {
+      padding: 24px;
+      border-radius: 18px;
+    }
+
+    .profile-wide-card,
+    .profile-stats,
+    .profile-signout-card {
+      grid-column: 1 / -1;
+    }
+
+    .profile-identity-card {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      min-height: 150px;
+    }
+
+    .profile-avatar {
+      width: 74px;
+      height: 74px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 18px;
+      background: linear-gradient(145deg, var(--accent), var(--accent-2));
+      color: #111;
+      font-size: 1.85rem;
+      font-weight: 900;
+      box-shadow: 0 15px 40px rgba(236,53,56,.18);
+    }
+
+    .profile-kicker {
+      color: #858791;
+      font-size: .75rem;
+      font-weight: 780;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .profile-identity-copy h2 {
+      margin: 4px 0 7px;
+      font-size: 1.6rem;
+    }
+
+    .profile-stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      background: transparent;
+      border: 0;
+      box-shadow: none;
+    }
+
+    .profile-stat {
+      display: grid;
+      gap: 4px;
+      padding: 19px 20px;
+      border-radius: 15px;
+    }
+
+    .profile-stat strong {
+      font-size: 1.5rem;
+      color: var(--accent-2);
+    }
+
+    .profile-stat span {
+      color: #8f919a;
+      font-size: .78rem;
+      font-weight: 680;
+    }
+
+    .profile-card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .profile-card-head h2,
+    .profile-signout-card h2 {
+      margin: 0 0 6px;
+      font-size: 1.15rem;
+    }
+
+    .profile-history-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .profile-history-empty {
+      padding: 28px 18px;
+      border: 1px dashed rgba(255,255,255,.09);
+      border-radius: 13px;
+      color: #858791;
+      text-align: center;
+    }
+
+    .profile-history-item {
+      display: grid;
+      grid-template-columns: 46px minmax(0, 1fr) auto;
+      gap: 13px;
+      align-items: center;
+      padding: 10px;
+      border-radius: 12px;
+      background: rgba(255,255,255,.035);
+    }
+
+    .profile-history-poster {
+      width: 46px;
+      aspect-ratio: 2 / 3;
+      object-fit: cover;
+      border-radius: 7px;
+      background: #1a1b20;
+    }
+
+    .profile-history-copy { min-width: 0; }
+
+    .profile-history-title {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      font-size: .88rem;
+      font-weight: 780;
+    }
+
+    .profile-history-meta {
+      margin-top: 3px;
+      color: #80828c;
+      font-size: .73rem;
+    }
+
+    .profile-history-progress {
+      height: 3px;
+      margin-top: 7px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255,255,255,.08);
+    }
+
+    .profile-history-progress span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    }
+
+    .profile-remove-button,
+    .profile-danger-button {
+      border: 1px solid rgba(236,53,56,.30);
+      background: rgba(236,53,56,.08);
+      color: #ff7779;
+      cursor: pointer;
+      font-weight: 760;
+    }
+
+    .profile-remove-button {
+      padding: 8px 10px;
+      border-radius: 9px;
+      font-size: .74rem;
+    }
+
+    .profile-danger-button {
+      padding: 9px 12px;
+      border-radius: 10px;
+      font-size: .76rem;
+    }
+
+    .profile-remove-button:hover,
+    .profile-danger-button:hover {
+      background: rgba(236,53,56,.15);
+    }
+
+    .profile-danger-button:disabled {
+      opacity: .4;
+      cursor: default;
+    }
+
+    .profile-form {
+      display: grid;
+      gap: 14px;
+    }
+
+    .profile-form label {
+      display: grid;
+      gap: 7px;
+      color: #b9bac1;
+      font-size: .78rem;
+      font-weight: 720;
+    }
+
+    .profile-form input {
+      width: 100%;
+      padding: 12px 13px;
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 10px;
+      outline: none;
+      background: rgba(255,255,255,.045);
+      color: #f5f5f7;
+    }
+
+    .profile-form input:focus {
+      border-color: rgba(238,223,53,.70);
+      box-shadow: 0 0 0 3px rgba(238,223,53,.09);
+    }
+
+    .profile-form .btn {
+      justify-self: start;
+    }
+
+    .profile-form-message {
+      min-height: 18px;
+      color: #ff7779;
+      font-size: .76rem;
+    }
+
+    .profile-form-message.success { color: #8ad49f; }
+
+    .profile-signout-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    @media (max-width: 800px) {
+      .profile-layout { grid-template-columns: 1fr; }
+      .profile-wide-card, .profile-stats, .profile-signout-card { grid-column: auto; }
+      .profile-stats { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    }
+
+    @media (max-width: 520px) {
+      .profile-section { padding-top: 24px; }
+      .profile-card { padding: 18px; }
+      .profile-stats { grid-template-columns: 1fr 1fr; }
+      .profile-card-head, .profile-signout-card { align-items: stretch; flex-direction: column; }
+      .profile-danger-button, .profile-signout-card .btn { width: 100%; }
+      .profile-history-item { grid-template-columns: 40px minmax(0,1fr); }
+      .profile-history-poster { width: 40px; }
+      .profile-remove-button { grid-column: 1 / -1; width: 100%; }
+    }
 
     .auth-modal-wrap {
       position: fixed;
@@ -2822,6 +3143,176 @@
       }
     }
 
+
+    /* Profile v2: account tabs, avatar uploads, watch later and social lists */
+    .profile-tabs {
+      display: flex;
+      gap: 6px;
+      margin: 22px 0 26px;
+      padding: 5px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(255,255,255,.035);
+      scrollbar-width: none;
+    }
+    .profile-tabs::-webkit-scrollbar { display: none; }
+    .profile-tab {
+      flex: 0 0 auto;
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 15px;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .profile-tab:hover { color: #fff; background: rgba(255,255,255,.045); }
+    .profile-tab.active { color: #08090c; background: var(--accent-2); }
+    .profile-panel { display: none; }
+    .profile-panel.active { display: block; }
+    .profile-panel-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; }
+    .profile-panel-grid .profile-wide-card { grid-column: 1 / -1; }
+
+    .profile-avatar-wrap { position: relative; flex: 0 0 auto; }
+    .profile-avatar,
+    .account-avatar { overflow: hidden; }
+    .profile-avatar img,
+    .account-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .profile-avatar-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .profile-upload-input { display: none; }
+    .profile-upload-button,
+    .profile-picture-remove {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 11px;
+      background: rgba(255,255,255,.04);
+      color: #fff;
+      font-weight: 750;
+      cursor: pointer;
+    }
+    .profile-upload-button:hover,
+    .profile-picture-remove:hover { border-color: rgba(238,223,53,.55); background: rgba(238,223,53,.08); }
+    .profile-picture-message { min-height: 1.2em; margin-top: 8px; color: var(--muted); font-size: .82rem; }
+
+    .library-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 16px;
+    }
+    .library-item {
+      position: relative;
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      background: rgba(255,255,255,.035);
+    }
+    .library-item-poster {
+      display: block;
+      width: 100%;
+      aspect-ratio: 2/3;
+      object-fit: cover;
+      background: #17181d;
+      cursor: pointer;
+    }
+    .library-item-copy { padding: 11px; }
+    .library-item-title { font-weight: 850; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .library-item-meta { margin-top: 4px; color: var(--muted); font-size: .78rem; }
+    .library-item-actions { display: flex; gap: 7px; margin-top: 10px; }
+    .library-item-actions button {
+      flex: 1;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 8px;
+      background: rgba(255,255,255,.04);
+      color: #fff;
+      font-size: .76rem;
+      font-weight: 750;
+      cursor: pointer;
+    }
+    .library-item-actions button:hover { border-color: rgba(238,223,53,.48); }
+
+    .list-create-row {
+      display: grid;
+      grid-template-columns: minmax(0,1fr) auto auto;
+      gap: 10px;
+      align-items: center;
+    }
+    .list-create-row input[type="text"],
+    .list-name-input {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,.045);
+      color: #fff;
+      outline: none;
+    }
+    .list-visibility {
+      display: inline-flex;
+      gap: 7px;
+      align-items: center;
+      color: var(--muted);
+      font-size: .85rem;
+      white-space: nowrap;
+    }
+    .user-list-stack, .discover-list-stack { display: grid; gap: 12px; margin-top: 16px; }
+    .user-list-card, .discover-list-card {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(255,255,255,.03);
+      overflow: hidden;
+    }
+    .user-list-head, .discover-list-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px 15px;
+    }
+    .discover-list-card { width: 100%; color: #fff; text-align: left; cursor: pointer; }
+    .discover-list-card:hover { background: rgba(238,223,53,.055); border-color: rgba(238,223,53,.35); }
+    .user-list-head strong, .discover-list-card strong { display: block; font-size: 1rem; }
+    .user-list-meta, .discover-list-meta { color: var(--muted); font-size: .78rem; margin-top: 3px; }
+    .user-list-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+    .user-list-actions button {
+      border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px;
+      background: rgba(255,255,255,.04); color: #fff; font-size: .75rem; font-weight: 750; cursor: pointer;
+    }
+    .user-list-actions .danger { color: #ff8a91; }
+    .user-list-items { padding: 0 15px 15px; }
+    .compact-list-items { display: flex; gap: 8px; overflow-x: auto; }
+    .compact-list-poster { width: 58px; flex: 0 0 58px; aspect-ratio: 2/3; border-radius: 7px; object-fit: cover; background:#15161a; cursor:pointer; }
+    .profile-empty { padding: 28px; border: 1px dashed var(--border); border-radius: 14px; color: var(--muted); text-align: center; }
+    .discover-detail-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:16px; }
+
+    .modal-library-actions { display:flex; flex-wrap:wrap; gap:9px; margin: 0 0 18px; }
+    .modal-library-actions .btn { min-height: 40px; }
+    .modal-list-picker {
+      margin: -8px 0 18px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255,255,255,.035);
+    }
+    .modal-list-picker-title { margin-bottom: 9px; color: var(--muted); font-size: .82rem; font-weight: 750; }
+    .modal-list-picker-options { display:flex; flex-wrap:wrap; gap:8px; }
+    .modal-list-picker-options button {
+      border: 1px solid var(--border); border-radius: 999px; padding: 8px 11px;
+      background: rgba(255,255,255,.04); color:#fff; font-weight:750; cursor:pointer;
+    }
+    .modal-list-picker-options button:hover { border-color: var(--accent-2); background: rgba(238,223,53,.08); }
+
+    @media (max-width: 760px) {
+      .profile-panel-grid { grid-template-columns: 1fr; }
+      .profile-panel-grid .profile-wide-card { grid-column: auto; }
+      .list-create-row { grid-template-columns: 1fr; }
+      .list-visibility { justify-self: start; }
+      .user-list-head { align-items:flex-start; flex-direction:column; }
+    }
+
   </style>
 </head>
 <body>
@@ -2841,6 +3332,11 @@
         <input id="searchInput" type="search" placeholder="Search movies and TV shows..." autocomplete="off" />
       </div>
 
+      <button id="discoverListsTopButton" class="discover-top-button" type="button" aria-label="Discover public lists" title="Discover Lists">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+        <span>Discover Lists</span>
+      </button>
+
       <div class="account-area">
         <button id="accountButton" class="account-button" type="button" aria-haspopup="true" aria-expanded="false">
           <span id="accountAvatar" class="account-avatar" aria-hidden="true">
@@ -2853,7 +3349,7 @@
           <div class="account-menu-profile">
             <strong id="accountMenuName">Account</strong>
           </div>
-          <div class="account-sync-line"><span id="accountSyncDot" class="account-sync-dot"></span><span id="accountSyncText">Synced across devices</span></div>
+          <button id="profileButton" type="button">Profile</button>
           <button id="logoutButton" type="button">Sign out</button>
         </div>
       </div>
@@ -2861,6 +3357,139 @@
   </header>
 
   <main class="app-shell">
+    <section id="profileSection" class="profile-section" style="display:none" aria-hidden="true">
+      <div class="profile-page-head">
+        <button id="profileBack" class="profile-back" type="button">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+          Back to browse
+        </button>
+        <div>
+          <div class="eyebrow">Account</div>
+          <h1>Profile</h1>
+          <p>Your account, saved titles and lists in one place.</p>
+        </div>
+      </div>
+
+      <nav class="profile-tabs" id="profileTabs" aria-label="Profile sections">
+        <button class="profile-tab active" type="button" data-profile-tab="overview">Overview</button>
+        <button class="profile-tab" type="button" data-profile-tab="watch-later">Watch Later</button>
+        <button class="profile-tab" type="button" data-profile-tab="my-lists">My Lists</button>
+        <button class="profile-tab" type="button" data-profile-tab="account">Account</button>
+      </nav>
+
+      <section class="profile-panel active" data-profile-panel="overview">
+        <div class="profile-panel-grid">
+          <section class="profile-card profile-identity-card profile-wide-card">
+            <div class="profile-avatar-wrap">
+              <div id="profileAvatar" class="profile-avatar">A</div>
+              <div class="profile-avatar-actions">
+                <label class="profile-upload-button" for="profilePictureInput">Change picture</label>
+                <input id="profilePictureInput" class="profile-upload-input" type="file" accept="image/jpeg,image/png,image/webp" />
+                <button id="profilePictureRemove" class="profile-picture-remove" type="button">Remove</button>
+              </div>
+              <div id="profilePictureMessage" class="profile-picture-message" role="status"></div>
+            </div>
+            <div class="profile-identity-copy">
+              <span class="profile-kicker">Signed in as</span>
+              <h2 id="profileUsername">Account</h2>
+              <p id="profileMemberSince">Account created —</p>
+            </div>
+          </section>
+
+          <section class="profile-stats" aria-label="Account stats">
+            <div class="profile-stat"><strong id="profileStatTitles">0</strong><span>Watching</span></div>
+            <div class="profile-stat"><strong id="profileStatWatchLater">0</strong><span>Watch later</span></div>
+            <div class="profile-stat"><strong id="profileStatLists">0</strong><span>Your lists</span></div>
+            <div class="profile-stat"><strong id="profileStatLatest">—</strong><span>Latest activity</span></div>
+          </section>
+
+          <section class="profile-card profile-wide-card">
+            <div class="profile-card-head">
+              <div><h2>Currently Watching</h2><p>Manage the titles that appear on your home screen.</p></div>
+              <button id="profileClearHistory" class="profile-danger-button" type="button">Clear history</button>
+            </div>
+            <div id="profileHistoryList" class="profile-history-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="profile-panel" data-profile-panel="watch-later">
+        <section class="profile-card profile-wide-card">
+          <div class="profile-card-head"><div><h2>Watch Later</h2><p>Shows and films you have saved for another time.</p></div></div>
+          <div id="watchLaterGrid" class="library-grid"></div>
+        </section>
+      </section>
+
+      <section class="profile-panel" data-profile-panel="my-lists">
+        <section class="profile-card profile-wide-card">
+          <div class="profile-card-head"><div><h2>My Lists</h2><p>Create uniquely named collections. Public lists can be browsed by other TV Archive users.</p></div></div>
+          <form id="createListForm" class="list-create-row">
+            <input id="createListName" type="text" maxlength="60" placeholder="e.g. Best 90s sitcoms" required />
+            <label class="list-visibility"><input id="createListPublic" type="checkbox" checked /> Public</label>
+            <button class="btn btn-primary" type="submit">Create list</button>
+          </form>
+          <div id="createListMessage" class="profile-form-message" role="status"></div>
+          <div id="myListsContainer" class="user-list-stack"></div>
+        </section>
+      </section>
+
+      <section class="profile-panel" data-profile-panel="account">
+        <div class="profile-panel-grid">
+          <section class="profile-card">
+            <div class="profile-card-head"><div><h2>Change username</h2><p>Usernames are 3–30 characters.</p></div></div>
+            <form id="profileUsernameForm" class="profile-form">
+              <label><span>New username</span><input id="profileNewUsername" type="text" minlength="3" maxlength="30" autocomplete="username" required /></label>
+              <label><span>Current password</span><input id="profileUsernamePassword" type="password" minlength="8" maxlength="128" autocomplete="current-password" required /></label>
+              <div id="profileUsernameMessage" class="profile-form-message" role="status"></div>
+              <button class="btn btn-primary" type="submit">Update username</button>
+            </form>
+          </section>
+
+          <section class="profile-card">
+            <div class="profile-card-head"><div><h2>Change password</h2><p>Use at least 8 characters.</p></div></div>
+            <form id="profilePasswordForm" class="profile-form">
+              <label><span>Current password</span><input id="profileCurrentPassword" type="password" minlength="8" maxlength="128" autocomplete="current-password" required /></label>
+              <label><span>New password</span><input id="profileNewPassword" type="password" minlength="8" maxlength="128" autocomplete="new-password" required /></label>
+              <label><span>Confirm new password</span><input id="profileConfirmPassword" type="password" minlength="8" maxlength="128" autocomplete="new-password" required /></label>
+              <div id="profilePasswordMessage" class="profile-form-message" role="status"></div>
+              <button class="btn btn-primary" type="submit">Update password</button>
+            </form>
+          </section>
+
+          <section class="profile-card profile-signout-card profile-wide-card">
+            <div><h2>Sign out</h2><p>End this session on this device.</p></div>
+            <button id="profileLogoutButton" class="btn btn-secondary" type="button">Sign out</button>
+          </section>
+        </div>
+      </section>
+    </section>
+
+    <section id="discoverSection" class="profile-section" style="display:none" aria-hidden="true">
+      <div class="profile-page-head">
+        <button id="discoverPageBack" class="profile-back" type="button">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+          Back to browse
+        </button>
+        <div>
+          <div class="eyebrow">Community</div>
+          <h1>Discover Lists</h1>
+          <p>Browse public collections created by other TV Archive users.</p>
+        </div>
+      </div>
+      <section class="profile-card profile-wide-card">
+        <div id="discoverListIndex">
+          <div class="profile-card-head"><div><h2>Public Lists</h2><p>See what other people are collecting and watching.</p></div><button id="discoverListsRefresh" class="btn btn-secondary" type="button">Refresh</button></div>
+          <div id="discoverListsContainer" class="discover-list-stack"></div>
+        </div>
+        <div id="discoverListDetail" hidden>
+          <div class="discover-detail-head">
+            <div><button id="discoverListBack" class="profile-back" type="button">← All public lists</button><h2 id="discoverListTitle"></h2><p id="discoverListOwner"></p></div>
+          </div>
+          <div id="discoverListItems" class="library-grid"></div>
+        </div>
+      </section>
+    </section>
+
     <section id="heroSection" class="hero" style="display:none">
       <div id="heroBg" class="hero-bg"></div>
       <iframe
@@ -3005,6 +3634,15 @@
       <div class="modal-content">
         <p id="modalDescription" class="modal-desc"></p>
 
+        <div class="modal-library-actions">
+          <button id="watchLaterButton" class="btn btn-secondary" type="button">+ Watch Later</button>
+          <button id="addToListButton" class="btn btn-secondary" type="button">+ Add to list</button>
+        </div>
+        <div id="modalListPicker" class="modal-list-picker" hidden>
+          <div class="modal-list-picker-title">Add this title to one of your lists</div>
+          <div id="modalListPickerOptions" class="modal-list-picker-options"></div>
+        </div>
+
         <div id="modalSelectorBar" class="selector-bar">
           <label id="seasonLabel">
             Season
@@ -3024,9 +3662,9 @@
       <button id="authClose" class="auth-close icon-btn" type="button" aria-label="Close sign in">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
       </button>
-      <div class="auth-brand">Show<span>Hub</span></div>
+      <<img class="brand-logo" src="./assets/tv-archive-logo.png" alt="TV Archive" />
       <h2 id="authTitle">Welcome back</h2>
-      <p id="authSubtitle">Sign in to keep your watch progress synced across devices.</p>
+      <p id="authSubtitle">Sign in to access your saved progress, Watch Later and lists.</p>
 
       <div class="auth-tabs" role="tablist" aria-label="Account options">
         <button id="authSignInTab" class="active" type="button" role="tab" aria-selected="true">Sign in</button>
@@ -3046,7 +3684,7 @@
         <div id="authError" class="auth-error" role="alert" aria-live="polite"></div>
         <button id="authSubmit" class="btn btn-primary auth-submit" type="submit">Sign in</button>
       </form>
-      <p class="auth-note">Sign in is required to watch. Your progress is saved to this account and synced across devices.</p>
+      <p class="auth-note">Sign in is required to watch. Your progress and saved library are attached to your account.</p>
     </div>
   </div>
 
@@ -3159,7 +3797,15 @@
       user: null,
       watchHistory: [],
       authMode: "signin",
-      accountSyncState: "idle"
+      accountSyncState: "idle",
+      profileOpen: false,
+      discoverOpen: false,
+      profileTab: "overview",
+      watchLater: [],
+      userLists: [],
+      discoverLists: [],
+      modalMedia: null,
+      personalLibraryLoaded: false
     };
 
     // Episode metadata is cached per TVMaze show ID. Keeping it keyed by show
@@ -3171,6 +3817,9 @@
 
     const searchInput = el("searchInput");
     const typeNav = el("typeNav");
+    const discoverListsTopButton = el("discoverListsTopButton");
+    const discoverSection = el("discoverSection");
+    const discoverPageBack = el("discoverPageBack");
     const heroSection = el("heroSection");
     const heroEyebrow = el("heroEyebrow");
     const heroTitle = el("heroTitle");
@@ -3225,9 +3874,51 @@
     const accountLabel = el("accountLabel");
     const accountMenu = el("accountMenu");
     const accountMenuName = el("accountMenuName");
-    const accountSyncDot = el("accountSyncDot");
-    const accountSyncText = el("accountSyncText");
+    const profileButton = el("profileButton");
     const logoutButton = el("logoutButton");
+    const profileSection = el("profileSection");
+    const profileBack = el("profileBack");
+    const profileTabs = el("profileTabs");
+    const profileAvatar = el("profileAvatar");
+    const profileUsername = el("profileUsername");
+    const profileMemberSince = el("profileMemberSince");
+    const profilePictureInput = el("profilePictureInput");
+    const profilePictureRemove = el("profilePictureRemove");
+    const profilePictureMessage = el("profilePictureMessage");
+    const profileStatTitles = el("profileStatTitles");
+    const profileStatWatchLater = el("profileStatWatchLater");
+    const profileStatLists = el("profileStatLists");
+    const profileStatLatest = el("profileStatLatest");
+    const profileHistoryList = el("profileHistoryList");
+    const profileClearHistory = el("profileClearHistory");
+    const watchLaterGrid = el("watchLaterGrid");
+    const createListForm = el("createListForm");
+    const createListName = el("createListName");
+    const createListPublic = el("createListPublic");
+    const createListMessage = el("createListMessage");
+    const myListsContainer = el("myListsContainer");
+    const discoverListsContainer = el("discoverListsContainer");
+    const discoverListsRefresh = el("discoverListsRefresh");
+    const discoverListIndex = el("discoverListIndex");
+    const discoverListDetail = el("discoverListDetail");
+    const discoverListBack = el("discoverListBack");
+    const discoverListTitle = el("discoverListTitle");
+    const discoverListOwner = el("discoverListOwner");
+    const discoverListItems = el("discoverListItems");
+    const profileUsernameForm = el("profileUsernameForm");
+    const profileNewUsername = el("profileNewUsername");
+    const profileUsernamePassword = el("profileUsernamePassword");
+    const profileUsernameMessage = el("profileUsernameMessage");
+    const profilePasswordForm = el("profilePasswordForm");
+    const profileCurrentPassword = el("profileCurrentPassword");
+    const profileNewPassword = el("profileNewPassword");
+    const profileConfirmPassword = el("profileConfirmPassword");
+    const profilePasswordMessage = el("profilePasswordMessage");
+    const profileLogoutButton = el("profileLogoutButton");
+    const watchLaterButton = el("watchLaterButton");
+    const addToListButton = el("addToListButton");
+    const modalListPicker = el("modalListPicker");
+    const modalListPickerOptions = el("modalListPickerOptions");
     const authModalWrap = el("authModalWrap");
     const authClose = el("authClose");
     const authTitle = el("authTitle");
@@ -3354,7 +4045,20 @@
 
     function clearAuthSession() {
       saveAuthToken("");
+      const wasUtilityPageOpen = state.profileOpen || state.discoverOpen;
+      if (state.profileOpen) {
+        state.profileOpen = false;
+        profileSection.style.display = "none";
+        profileSection.setAttribute("aria-hidden", "true");
+      }
+      if (state.discoverOpen) {
+        state.discoverOpen = false;
+        discoverSection.style.display = "none";
+        discoverSection.setAttribute("aria-hidden", "true");
+        discoverListsTopButton.classList.remove("active");
+      }
       setAccountUser(null);
+      if (wasUtilityPageOpen) restoreBrowseAfterUtilityPage();
     }
 
     async function apiFetch(path, options = {}) {
@@ -3384,23 +4088,629 @@
       return data;
     }
 
-    function setAccountSyncState(mode, message = "") {
+    function setAccountSyncState(mode, _message = "") {
       state.accountSyncState = mode;
-      accountSyncDot.classList.toggle("syncing", mode === "syncing");
-      accountSyncDot.classList.toggle("error", mode === "error");
-      accountSyncText.textContent = message || (
-        mode === "syncing" ? "Syncing watch progress…" :
-        mode === "error" ? "Sync interrupted — will retry" :
-        "Synced across devices"
-      );
+    }
+
+    function formatProfileDate(value, fallback = "—") {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return fallback;
+      return new Intl.DateTimeFormat("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric"
+      }).format(date);
+    }
+
+    function formatProfileActivity(value) {
+      const date = new Date(Number(value || 0));
+      if (Number.isNaN(date.getTime()) || !Number(value)) return "—";
+      const now = Date.now();
+      const diffDays = Math.floor((now - date.getTime()) / 86400000);
+      if (diffDays <= 0) return "Today";
+      if (diffDays === 1) return "Yesterday";
+      if (diffDays < 7) return `${diffDays}d ago`;
+      return formatProfileDate(date);
+    }
+
+    function profileEpisodeLabel(entry) {
+      if (entry?.mediaType === "movie") return "Film";
+      const bits = [];
+      if (Number(entry?.season) > 0 && Number(entry?.episode) > 0) {
+        bits.push(`S${entry.season} · E${entry.episode}`);
+      }
+      if (entry?.episodeName) bits.push(entry.episodeName);
+      return bits.join(" · ") || "TV series";
+    }
+
+    function renderAvatar(target, user, alt = "Profile picture") {
+      if (!target) return;
+      const picture = String(user?.profilePicture || "");
+      const username = String(user?.username || "Account");
+      if (picture) {
+        target.innerHTML = `<img src="${escapeHtml(picture)}" alt="${escapeHtml(alt)}" />`;
+      } else {
+        target.textContent = username.trim().charAt(0).toUpperCase() || "A";
+      }
+    }
+
+    function libraryItemFromMedia(media) {
+      return {
+        imdbId: getImdbId(media),
+        mediaType: getMediaType(media),
+        showId: getMediaType(media) === "tv" ? Number(media?.id || 0) || null : null,
+        name: getMediaName(media),
+        poster: getMediaPoster(media),
+        backdrop: getMediaBackdrop(media),
+        summary: getMediaSummary(media),
+        year: getMediaYear(media)
+      };
+    }
+
+    function libraryItemToMedia(item) {
+      if (item?.mediaType === "movie") {
+        return {
+          mediaType: "movie",
+          imdbId: item.imdbId,
+          id: item.imdbId,
+          name: item.name,
+          title: item.name,
+          poster: item.poster || "",
+          backdrop: item.backdrop || item.poster || "",
+          summary: item.summary || "",
+          year: item.year || ""
+        };
+      }
+      return {
+        mediaType: "tv",
+        id: Number(item?.showId || 0) || null,
+        name: item?.name || "Untitled",
+        summary: item?.summary || "",
+        premiered: item?.year ? `${item.year}-01-01` : "",
+        externals: { imdb: item?.imdbId || "" },
+        image: { medium: item?.poster || "", original: item?.backdrop || item?.poster || "" }
+      };
+    }
+
+    async function openSavedLibraryItem(item) {
+      if (!item) return;
+      if (item.mediaType === "movie") {
+        openMovieDetails(libraryItemToMedia(item));
+        return;
+      }
+      let media = libraryItemToMedia(item);
+      if (!media.id && item.imdbId) {
+        try {
+          const lookedUp = await fetchJson(`${TVMAZE_API}/lookup/shows?imdb=${encodeURIComponent(item.imdbId)}`);
+          media = { ...lookedUp, mediaType: "tv" };
+          item.showId = Number(lookedUp?.id || 0) || null;
+        } catch (error) {
+          console.error("Could not resolve saved TV title", error);
+        }
+      }
+      if (validPlayableShow(media)) openShow(media);
+    }
+
+    function renderLibraryGrid(container, items, { removable = false, removeHandler = null } = {}) {
+      if (!container) return;
+      if (!items?.length) {
+        container.innerHTML = '<div class="profile-empty">No titles here yet.</div>';
+        return;
+      }
+      container.innerHTML = items.map(item => `
+        <article class="library-item" data-library-id="${escapeHtml(item.imdbId)}">
+          ${item.poster
+            ? `<img class="library-item-poster" src="${escapeHtml(item.poster)}" alt="${escapeHtml(item.name || "Title")}" loading="lazy" />`
+            : '<div class="library-item-poster"></div>'}
+          <div class="library-item-copy">
+            <div class="library-item-title">${escapeHtml(item.name || "Untitled")}</div>
+            <div class="library-item-meta">${item.mediaType === "movie" ? "Film" : "TV series"}${item.year ? ` · ${escapeHtml(item.year)}` : ""}</div>
+            <div class="library-item-actions">
+              <button type="button" data-library-open="${escapeHtml(item.imdbId)}">View</button>
+              ${removable ? `<button type="button" data-library-remove="${escapeHtml(item.imdbId)}">Remove</button>` : ""}
+            </div>
+          </div>
+        </article>`).join("");
+      container.querySelectorAll("[data-library-open], .library-item-poster").forEach(node => {
+        node.addEventListener("click", () => {
+          const card = node.closest("[data-library-id]");
+          const item = items.find(entry => entry.imdbId === card?.dataset.libraryId);
+          openSavedLibraryItem(item);
+        });
+      });
+      if (removable && removeHandler) {
+        container.querySelectorAll("[data-library-remove]").forEach(button => {
+          button.addEventListener("click", () => removeHandler(button.dataset.libraryRemove));
+        });
+      }
+    }
+
+    function setProfileTab(tab) {
+      const target = ["overview", "watch-later", "my-lists", "account"].includes(tab) ? tab : "overview";
+      state.profileTab = target;
+      profileTabs.querySelectorAll("[data-profile-tab]").forEach(button => {
+        button.classList.toggle("active", button.dataset.profileTab === target);
+      });
+      profileSection.querySelectorAll("[data-profile-panel]").forEach(panel => {
+        panel.classList.toggle("active", panel.dataset.profilePanel === target);
+      });
+    }
+
+    async function loadPersonalLibraryData({ includeDiscover = true } = {}) {
+      if (!state.user) return;
+      const requests = [apiFetch("/api/watch-later"), apiFetch("/api/lists")];
+      if (includeDiscover) requests.push(apiFetch("/api/lists/discover"));
+      const results = await Promise.all(requests);
+      state.watchLater = Array.isArray(results[0]?.entries) ? results[0].entries : [];
+      state.userLists = Array.isArray(results[1]?.lists) ? results[1].lists : [];
+      if (includeDiscover) state.discoverLists = Array.isArray(results[2]?.lists) ? results[2].lists : [];
+    }
+
+    async function ensurePersonalLibraryLoaded() {
+      if (!state.user) return false;
+      if (state.personalLibraryLoaded) return true;
+      await loadPersonalLibraryData({ includeDiscover: false });
+      state.personalLibraryLoaded = true;
+      return true;
+    }
+
+    function renderProfilePage() {
+      if (!state.user) return;
+      const history = getWatchHistory();
+      const latest = history.reduce((max, entry) => Math.max(max, Number(entry.lastWatched || 0)), 0);
+      const username = state.user.username || "Account";
+
+      renderAvatar(profileAvatar, state.user);
+      profileUsername.textContent = username;
+      profileMemberSince.textContent = state.user.createdAt
+        ? `Account created ${formatProfileDate(state.user.createdAt)}`
+        : "Account creation date unavailable";
+      profilePictureRemove.disabled = !state.user.profilePicture;
+      profileStatTitles.textContent = String(history.length);
+      profileStatWatchLater.textContent = String(state.watchLater.length);
+      profileStatLists.textContent = String(state.userLists.length);
+      profileStatLatest.textContent = formatProfileActivity(latest);
+      profileClearHistory.disabled = history.length === 0;
+
+      if (!history.length) {
+        profileHistoryList.innerHTML = '<div class="profile-history-empty">Nothing in Currently Watching yet.</div>';
+      } else {
+        profileHistoryList.innerHTML = history.map(entry => {
+          const duration = Number(entry.duration || 0);
+          const current = Number(entry.currentTime || 0);
+          const progress = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
+          return `
+            <div class="profile-history-item" data-profile-history-id="${escapeHtml(entry.imdbId)}">
+              ${entry.poster
+                ? `<img class="profile-history-poster" src="${escapeHtml(entry.poster)}" alt="" loading="lazy" />`
+                : '<div class="profile-history-poster"></div>'}
+              <div class="profile-history-copy">
+                <div class="profile-history-title">${escapeHtml(entry.name || "Untitled")}</div>
+                <div class="profile-history-meta">${escapeHtml(profileEpisodeLabel(entry))} · ${formatProfileActivity(entry.lastWatched)}</div>
+                <div class="profile-history-progress"><span style="width:${progress.toFixed(2)}%"></span></div>
+              </div>
+              <button class="profile-remove-button" type="button" data-profile-remove="${escapeHtml(entry.imdbId)}">Remove</button>
+            </div>`;
+        }).join("");
+        profileHistoryList.querySelectorAll("[data-profile-remove]").forEach(button => {
+          button.addEventListener("click", () => {
+            const entry = getWatchHistory().find(item => item.imdbId === button.dataset.profileRemove);
+            if (!entry) return;
+            removeWatchEntry(entry);
+            renderProfilePage();
+          });
+        });
+      }
+      renderWatchLater();
+      renderMyLists();
+      renderDiscoverLists();
+    }
+
+    function renderWatchLater() {
+      renderLibraryGrid(watchLaterGrid, state.watchLater, {
+        removable: true,
+        removeHandler: removeWatchLaterItem
+      });
+    }
+
+    async function removeWatchLaterItem(imdbId) {
+      if (!state.user) return;
+      try {
+        await apiFetch(`/api/watch-later/${encodeURIComponent(imdbId)}`, { method: "DELETE" });
+        state.watchLater = state.watchLater.filter(item => item.imdbId !== imdbId);
+        renderProfilePage();
+        if (state.modalMedia && getImdbId(state.modalMedia) === imdbId) updateModalLibraryActions(state.modalMedia);
+      } catch (error) {
+        window.alert(error.message || "Could not remove this title from Watch Later.");
+      }
+    }
+
+    function renderMyLists() {
+      if (!myListsContainer) return;
+      if (!state.userLists.length) {
+        myListsContainer.innerHTML = '<div class="profile-empty">You have not created any lists yet.</div>';
+        return;
+      }
+      myListsContainer.innerHTML = state.userLists.map(list => `
+        <article class="user-list-card" data-user-list="${escapeHtml(list.id)}">
+          <div class="user-list-head">
+            <div><strong>${escapeHtml(list.name)}</strong><div class="user-list-meta">${list.isPublic ? "Public" : "Private"} · ${(list.items || []).length} title${(list.items || []).length === 1 ? "" : "s"}</div></div>
+            <div class="user-list-actions">
+              <button type="button" data-list-rename>Rename</button>
+              <button type="button" data-list-visibility>${list.isPublic ? "Make private" : "Make public"}</button>
+              <button type="button" class="danger" data-list-delete>Delete</button>
+            </div>
+          </div>
+          <div class="user-list-items"><div class="library-grid" data-list-items></div></div>
+        </article>`).join("");
+      myListsContainer.querySelectorAll("[data-user-list]").forEach(card => {
+        const list = state.userLists.find(item => String(item.id) === String(card.dataset.userList));
+        if (!list) return;
+        renderLibraryGrid(card.querySelector("[data-list-items]"), list.items || [], {
+          removable: true,
+          removeHandler: imdbId => removeItemFromList(list.id, imdbId)
+        });
+        card.querySelector("[data-list-rename]").addEventListener("click", () => renameList(list));
+        card.querySelector("[data-list-visibility]").addEventListener("click", () => updateListVisibility(list));
+        card.querySelector("[data-list-delete]").addEventListener("click", () => deleteList(list));
+      });
+    }
+
+    async function createUserList(event) {
+      event.preventDefault();
+      createListMessage.textContent = "";
+      const submit = createListForm.querySelector('button[type="submit"]');
+      submit.disabled = true;
+      try {
+        const data = await apiFetch("/api/lists", {
+          method: "POST",
+          body: JSON.stringify({ name: createListName.value.trim(), isPublic: createListPublic.checked })
+        });
+        state.userLists.unshift(data.list);
+        createListForm.reset();
+        createListPublic.checked = true;
+        createListMessage.textContent = "List created.";
+        createListMessage.classList.add("success");
+        renderProfilePage();
+      } catch (error) {
+        createListMessage.textContent = error.message || "Could not create list.";
+        createListMessage.classList.remove("success");
+      } finally { submit.disabled = false; }
+    }
+
+    async function renameList(list) {
+      const name = window.prompt("Rename list", list.name);
+      if (name === null || !name.trim() || name.trim() === list.name) return;
+      try {
+        const data = await apiFetch(`/api/lists/${encodeURIComponent(list.id)}`, {
+          method: "PATCH", body: JSON.stringify({ name: name.trim(), isPublic: list.isPublic })
+        });
+        Object.assign(list, data.list);
+        renderProfilePage();
+      } catch (error) { window.alert(error.message || "Could not rename list."); }
+    }
+
+    async function updateListVisibility(list) {
+      try {
+        const data = await apiFetch(`/api/lists/${encodeURIComponent(list.id)}`, {
+          method: "PATCH", body: JSON.stringify({ name: list.name, isPublic: !list.isPublic })
+        });
+        Object.assign(list, data.list);
+        renderProfilePage();
+      } catch (error) { window.alert(error.message || "Could not change list visibility."); }
+    }
+
+    async function deleteList(list) {
+      if (!window.confirm(`Delete “${list.name}”?`)) return;
+      try {
+        await apiFetch(`/api/lists/${encodeURIComponent(list.id)}`, { method: "DELETE" });
+        state.userLists = state.userLists.filter(item => String(item.id) !== String(list.id));
+        renderProfilePage();
+      } catch (error) { window.alert(error.message || "Could not delete list."); }
+    }
+
+    async function removeItemFromList(listId, imdbId) {
+      try {
+        await apiFetch(`/api/lists/${encodeURIComponent(listId)}/items/${encodeURIComponent(imdbId)}`, { method: "DELETE" });
+        const list = state.userLists.find(item => String(item.id) === String(listId));
+        if (list) list.items = (list.items || []).filter(item => item.imdbId !== imdbId);
+        renderProfilePage();
+      } catch (error) { window.alert(error.message || "Could not remove this title from the list."); }
+    }
+
+    function renderDiscoverLists() {
+      if (!discoverListsContainer || !discoverListIndex || !discoverListDetail) return;
+      discoverListIndex.hidden = false;
+      discoverListDetail.hidden = true;
+      if (!state.discoverLists.length) {
+        discoverListsContainer.innerHTML = '<div class="profile-empty">No public lists have been shared yet.</div>';
+        return;
+      }
+      discoverListsContainer.innerHTML = state.discoverLists.map(list => `
+        <button class="discover-list-card" type="button" data-discover-list="${escapeHtml(list.id)}">
+          <div><strong>${escapeHtml(list.name)}</strong><div class="discover-list-meta">by ${escapeHtml(list.owner || "TV Archive user")}</div></div>
+          <div class="discover-list-meta">${Number(list.itemCount || 0)} title${Number(list.itemCount || 0) === 1 ? "" : "s"} →</div>
+        </button>`).join("");
+      discoverListsContainer.querySelectorAll("[data-discover-list]").forEach(button => {
+        button.addEventListener("click", () => openDiscoverList(button.dataset.discoverList));
+      });
+    }
+
+    async function refreshDiscoverLists() {
+      discoverListsRefresh.disabled = true;
+      try {
+        const data = await apiFetch("/api/lists/discover");
+        state.discoverLists = Array.isArray(data?.lists) ? data.lists : [];
+        renderDiscoverLists();
+      } catch (error) { window.alert(error.message || "Could not load public lists."); }
+      finally { discoverListsRefresh.disabled = false; }
+    }
+
+    async function openDiscoverList(listId) {
+      try {
+        const data = await apiFetch(`/api/lists/${encodeURIComponent(listId)}/browse`);
+        discoverListIndex.hidden = true;
+        discoverListDetail.hidden = false;
+        discoverListTitle.textContent = data?.list?.name || "Public list";
+        discoverListOwner.textContent = `Created by ${data?.list?.owner || "TV Archive user"}`;
+        renderLibraryGrid(discoverListItems, data?.items || []);
+      } catch (error) { window.alert(error.message || "Could not open this list."); }
+    }
+
+    async function resizeProfilePicture(file) {
+      if (!file || !/^image\/(jpeg|png|webp)$/i.test(file.type)) throw new Error("Choose a JPEG, PNG, or WebP image.");
+      if (file.size > 8 * 1024 * 1024) throw new Error("Choose an image smaller than 8 MB.");
+      let source;
+      let revokeUrl = "";
+      if (typeof createImageBitmap === "function") {
+        source = await createImageBitmap(file);
+      } else {
+        revokeUrl = URL.createObjectURL(file);
+        source = await new Promise((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = () => reject(new Error("Could not read that image."));
+          image.src = revokeUrl;
+        });
+      }
+      const width = Number(source.width || source.naturalWidth || 0);
+      const height = Number(source.height || source.naturalHeight || 0);
+      const canvas = document.createElement("canvas");
+      canvas.width = 320; canvas.height = 320;
+      const ctx = canvas.getContext("2d");
+      const sourceSize = Math.min(width, height);
+      const sx = (width - sourceSize) / 2;
+      const sy = (height - sourceSize) / 2;
+      ctx.fillStyle = "#090a0d"; ctx.fillRect(0, 0, 320, 320);
+      ctx.drawImage(source, sx, sy, sourceSize, sourceSize, 0, 0, 320, 320);
+      source.close?.();
+      if (revokeUrl) URL.revokeObjectURL(revokeUrl);
+      return canvas.toDataURL("image/jpeg", .78);
+    }
+
+    async function changeProfilePicture(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      profilePictureMessage.textContent = "Preparing picture…";
+      try {
+        const imageData = await resizeProfilePicture(file);
+        const data = await apiFetch("/api/account/profile-picture", { method: "PATCH", body: JSON.stringify({ imageData }) });
+        setAccountUser(data.user);
+        profilePictureMessage.textContent = "Profile picture updated.";
+        renderProfilePage();
+      } catch (error) { profilePictureMessage.textContent = error.message || "Could not update profile picture."; }
+      finally { profilePictureInput.value = ""; }
+    }
+
+    async function removeProfilePicture() {
+      if (!state.user?.profilePicture) return;
+      try {
+        const data = await apiFetch("/api/account/profile-picture", { method: "PATCH", body: JSON.stringify({ imageData: "" }) });
+        setAccountUser(data.user);
+        profilePictureMessage.textContent = "Profile picture removed.";
+        renderProfilePage();
+      } catch (error) { profilePictureMessage.textContent = error.message || "Could not remove profile picture."; }
+    }
+
+    function hideBrowseForProfile() {
+      heroTrailerCommand("pauseVideo");
+      heroSection.style.display = "none";
+      continueSection.style.display = "none";
+      liveSportsSection.style.display = "none";
+      rowsContainer.style.display = "none";
+      searchResultsSection.style.display = "none";
+      collectionSection.style.display = "none";
+      catalogueActions.style.display = "none";
+      collectionActions.style.display = "none";
+    }
+
+    function restoreBrowseAfterUtilityPage() {
+      if (state.typeScope === "live") {
+        showLiveSportsView(searchInput.value);
+        return;
+      }
+
+      hideLiveSportsView();
+      if (state.activeCollection) {
+        collectionSection.style.display = "block";
+        renderActiveCollection();
+      } else if (state.searchTerm) {
+        searchResultsSection.style.display = "block";
+      } else {
+        rowsContainer.style.display = "";
+        continueSection.style.display = "";
+        renderCatalogue();
+        populateHero(state.heroMedia);
+      }
+    }
+
+    async function openDiscoverPage() {
+      if (!state.user) {
+        openAuthModal("signin");
+        return;
+      }
+      closeAccountMenu();
+      closeLiveSchedule();
+      if (state.profileOpen) {
+        state.profileOpen = false;
+        profileSection.style.display = "none";
+        profileSection.setAttribute("aria-hidden", "true");
+      }
+      state.discoverOpen = true;
+      discoverListsTopButton.classList.add("active");
+      hideBrowseForProfile();
+      discoverSection.style.display = "block";
+      discoverSection.setAttribute("aria-hidden", "false");
+      renderDiscoverLists();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      try {
+        const data = await apiFetch("/api/lists/discover");
+        state.discoverLists = Array.isArray(data?.lists) ? data.lists : [];
+        renderDiscoverLists();
+      } catch (error) {
+        console.error("Could not load public lists", error);
+        discoverListsContainer.innerHTML = `<div class="profile-empty">${escapeHtml(error.message || "Could not load public lists.")}</div>`;
+      }
+    }
+
+    function closeDiscoverPage({ restoreBrowse = true } = {}) {
+      if (!state.discoverOpen) return;
+      state.discoverOpen = false;
+      discoverListsTopButton.classList.remove("active");
+      discoverSection.style.display = "none";
+      discoverSection.setAttribute("aria-hidden", "true");
+      discoverListIndex.hidden = false;
+      discoverListDetail.hidden = true;
+      if (restoreBrowse) restoreBrowseAfterUtilityPage();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    async function openProfilePage() {
+      if (!state.user) {
+        openAuthModal("signin");
+        return;
+      }
+      closeAccountMenu();
+      closeLiveSchedule();
+      if (state.discoverOpen) closeDiscoverPage({ restoreBrowse: false });
+      state.profileOpen = true;
+      hideBrowseForProfile();
+      profileSection.style.display = "block";
+      profileSection.setAttribute("aria-hidden", "false");
+      profileUsernameMessage.textContent = "";
+      profileUsernameMessage.classList.remove("success");
+      profilePasswordMessage.textContent = "";
+      profilePasswordMessage.classList.remove("success");
+      profilePictureMessage.textContent = "";
+      createListMessage.textContent = "";
+      profileNewUsername.value = state.user.username || "";
+      profileUsernamePassword.value = "";
+      profilePasswordForm.reset();
+      setProfileTab(state.profileTab || "overview");
+      renderProfilePage();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      try {
+        await loadPersonalLibraryData({ includeDiscover: false });
+        state.personalLibraryLoaded = true;
+        renderProfilePage();
+      } catch (error) {
+        console.error("Could not load profile collections", error);
+      }
+    }
+
+    function closeProfilePage() {
+      if (!state.profileOpen) return;
+      state.profileOpen = false;
+      profileSection.style.display = "none";
+      profileSection.setAttribute("aria-hidden", "true");
+
+      restoreBrowseAfterUtilityPage();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    async function clearProfileHistory() {
+      if (!state.user || !getWatchHistory().length) return;
+      if (!window.confirm("Clear all Currently Watching history for this account?")) return;
+      profileClearHistory.disabled = true;
+      try {
+        await apiFetch("/api/watch-history", { method: "DELETE" });
+        setWatchHistory([]);
+        writePendingWatchHistory([]);
+        renderContinueWatching();
+        renderProfilePage();
+      } catch (error) {
+        window.alert(error.message || "Could not clear watch history.");
+      } finally {
+        profileClearHistory.disabled = getWatchHistory().length === 0;
+      }
+    }
+
+    async function submitProfileUsername(event) {
+      event.preventDefault();
+      profileUsernameMessage.textContent = "";
+      profileUsernameMessage.classList.remove("success");
+      const submit = profileUsernameForm.querySelector('button[type="submit"]');
+      submit.disabled = true;
+      try {
+        const data = await apiFetch("/api/account/username", {
+          method: "PATCH",
+          body: JSON.stringify({
+            username: profileNewUsername.value.trim(),
+            currentPassword: profileUsernamePassword.value
+          })
+        });
+        setAccountUser(data?.user || state.user);
+        profileNewUsername.value = state.user?.username || "";
+        profileUsernamePassword.value = "";
+        profileUsernameMessage.textContent = "Username updated.";
+        profileUsernameMessage.classList.add("success");
+        renderProfilePage();
+      } catch (error) {
+        profileUsernameMessage.textContent = error.message || "Could not update username.";
+      } finally {
+        submit.disabled = false;
+      }
+    }
+
+    async function submitProfilePassword(event) {
+      event.preventDefault();
+      profilePasswordMessage.textContent = "";
+      profilePasswordMessage.classList.remove("success");
+      if (profileNewPassword.value !== profileConfirmPassword.value) {
+        profilePasswordMessage.textContent = "New passwords do not match.";
+        return;
+      }
+      const submit = profilePasswordForm.querySelector('button[type="submit"]');
+      submit.disabled = true;
+      try {
+        await apiFetch("/api/account/password", {
+          method: "PATCH",
+          body: JSON.stringify({
+            currentPassword: profileCurrentPassword.value,
+            newPassword: profileNewPassword.value
+          })
+        });
+        profilePasswordForm.reset();
+        profilePasswordMessage.textContent = "Password updated.";
+        profilePasswordMessage.classList.add("success");
+      } catch (error) {
+        profilePasswordMessage.textContent = error.message || "Could not update password.";
+      } finally {
+        submit.disabled = false;
+      }
     }
 
     function setAccountUser(user) {
+      const previousUserId = state.user?.id || null;
       state.user = user || null;
       closeAccountMenu();
 
       if (!state.user) {
         state.watchHistory = [];
+        state.watchLater = [];
+        state.userLists = [];
+        state.discoverLists = [];
+        state.personalLibraryLoaded = false;
         accountAvatar.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>';
         accountLabel.textContent = "Sign in";
         accountButton.setAttribute("aria-label", "Sign in to TV Archive");
@@ -3408,12 +4718,19 @@
         return;
       }
 
+      if (previousUserId && String(previousUserId) !== String(state.user.id)) {
+        state.watchLater = [];
+        state.userLists = [];
+        state.discoverLists = [];
+        state.personalLibraryLoaded = false;
+      }
       const label = state.user.username || "Account";
-      accountAvatar.textContent = label.trim().charAt(0).toUpperCase() || "A";
+      renderAvatar(accountAvatar, state.user, `${label} profile picture`);
       accountLabel.textContent = label;
       accountMenuName.textContent = label;
       accountButton.setAttribute("aria-label", `Open account menu for ${label}`);
       setAccountSyncState("idle");
+      if (state.profileOpen) renderProfilePage();
     }
 
     function setAuthMode(mode) {
@@ -3427,7 +4744,7 @@
       authTitle.textContent = registering ? "Create your account" : "Welcome back";
       authSubtitle.textContent = registering
         ? "Choose a username and password to watch and continue on any device."
-        : "Sign in with your username to watch and sync your progress.";
+        : "Sign in with your username to access your saved TV Archive account.";
       authSubmit.textContent = registering ? "Create account" : "Sign in";
       authError.textContent = "";
     }
@@ -3762,6 +5079,7 @@
       const withoutCurrentTitle = history.filter(item => item.imdbId !== entry.imdbId);
       setWatchHistory([entry, ...withoutCurrentTitle]);
       renderContinueWatching();
+      if (state.profileOpen) renderProfilePage();
 
       // Playback progress is deliberately cached in the browser while watching.
       // Neon is only touched for explicit checkpoints: pause, seek, end or exit.
@@ -3776,6 +5094,7 @@
       setWatchHistory(getWatchHistory().filter(item => item.imdbId !== entry.imdbId));
       clearPendingWatchEntry(entry?.imdbId);
       renderContinueWatching();
+      if (state.profileOpen) renderProfilePage();
       if (state.user && entry?.imdbId) {
         setAccountSyncState("syncing");
         apiFetch(`/api/watch-history/${encodeURIComponent(entry.imdbId)}`, { method: "DELETE" })
@@ -4414,6 +5733,7 @@
     }
 
     function renderCatalogue() {
+      if (state.profileOpen) return;
       if (state.typeScope === "live") {
         showLiveSportsView(searchInput.value);
         return;
@@ -4944,6 +6264,10 @@
       }
 
       state.heroMedia = media;
+      if (state.profileOpen) {
+        heroSection.style.display = "none";
+        return;
+      }
       heroSection.style.display = "block";
 
       const isMovie = getMediaType(media) === "movie";
@@ -5552,6 +6876,105 @@
       }
     }
 
+    async function updateModalLibraryActions(media, { load = true } = {}) {
+      if (!media) return;
+      state.modalMedia = media;
+      modalListPicker.hidden = true;
+      if (!state.user) {
+        watchLaterButton.textContent = "+ Watch Later";
+        addToListButton.textContent = "+ Add to list";
+        return;
+      }
+      if (load && !state.personalLibraryLoaded) {
+        try {
+          await ensurePersonalLibraryLoaded();
+          if (state.modalMedia === media) updateModalLibraryActions(media, { load: false });
+        } catch (error) {
+          console.error("Could not load saved library", error);
+        }
+        return;
+      }
+      const imdbId = getImdbId(media);
+      const inWatchLater = state.watchLater.some(item => item.imdbId === imdbId);
+      watchLaterButton.textContent = inWatchLater ? "✓ In Watch Later" : "+ Watch Later";
+      addToListButton.textContent = "+ Add to list";
+    }
+
+    async function toggleModalWatchLater() {
+      if (!state.modalMedia) return;
+      if (!state.user) {
+        openAuthModal("signin");
+        authSubtitle.textContent = "Sign in to save titles to Watch Later.";
+        return;
+      }
+      watchLaterButton.disabled = true;
+      try {
+        await ensurePersonalLibraryLoaded();
+        const item = libraryItemFromMedia(state.modalMedia);
+        const exists = state.watchLater.some(entry => entry.imdbId === item.imdbId);
+        if (exists) {
+          await apiFetch(`/api/watch-later/${encodeURIComponent(item.imdbId)}`, { method: "DELETE" });
+          state.watchLater = state.watchLater.filter(entry => entry.imdbId !== item.imdbId);
+        } else {
+          const data = await apiFetch(`/api/watch-later/${encodeURIComponent(item.imdbId)}`, {
+            method: "PUT", body: JSON.stringify(item)
+          });
+          state.watchLater = [data.entry || item, ...state.watchLater.filter(entry => entry.imdbId !== item.imdbId)];
+        }
+        updateModalLibraryActions(state.modalMedia, { load: false });
+        if (state.profileOpen) renderProfilePage();
+      } catch (error) {
+        window.alert(error.message || "Could not update Watch Later.");
+      } finally { watchLaterButton.disabled = false; }
+    }
+
+    async function toggleModalListPicker() {
+      if (!state.modalMedia) return;
+      if (!state.user) {
+        openAuthModal("signin");
+        authSubtitle.textContent = "Sign in to add titles to your lists.";
+        return;
+      }
+      try {
+        await ensurePersonalLibraryLoaded();
+        modalListPicker.hidden = !modalListPicker.hidden;
+        if (modalListPicker.hidden) return;
+        if (!state.userLists.length) {
+          modalListPickerOptions.innerHTML = '<span class="profile-form-message">Create a list from Profile → My Lists first.</span>';
+          return;
+        }
+        const imdbId = getImdbId(state.modalMedia);
+        modalListPickerOptions.innerHTML = state.userLists.map(list => {
+          const included = (list.items || []).some(item => item.imdbId === imdbId);
+          return `<button type="button" data-modal-list="${escapeHtml(list.id)}">${included ? "✓ " : "+ "}${escapeHtml(list.name)}</button>`;
+        }).join("");
+        modalListPickerOptions.querySelectorAll("[data-modal-list]").forEach(button => {
+          button.addEventListener("click", () => addModalMediaToList(button.dataset.modalList));
+        });
+      } catch (error) { window.alert(error.message || "Could not load your lists."); }
+    }
+
+    async function addModalMediaToList(listId) {
+      const media = state.modalMedia;
+      const list = state.userLists.find(item => String(item.id) === String(listId));
+      if (!media || !list) return;
+      const libraryItem = libraryItemFromMedia(media);
+      const exists = (list.items || []).some(item => item.imdbId === libraryItem.imdbId);
+      try {
+        if (exists) {
+          await apiFetch(`/api/lists/${encodeURIComponent(list.id)}/items/${encodeURIComponent(libraryItem.imdbId)}`, { method: "DELETE" });
+          list.items = (list.items || []).filter(item => item.imdbId !== libraryItem.imdbId);
+        } else {
+          const data = await apiFetch(`/api/lists/${encodeURIComponent(list.id)}/items/${encodeURIComponent(libraryItem.imdbId)}`, {
+            method: "PUT", body: JSON.stringify(libraryItem)
+          });
+          list.items = [data.item || libraryItem, ...(list.items || []).filter(item => item.imdbId !== libraryItem.imdbId)];
+        }
+        toggleModalListPicker();
+        if (state.profileOpen) renderProfilePage();
+      } catch (error) { window.alert(error.message || "Could not update this list."); }
+    }
+
     function openMovieDetails(movie) {
       if (!movie || !getImdbId(movie)) return;
 
@@ -5560,6 +6983,7 @@
       modalEyebrow.textContent = "Movie";
       modalTitle.textContent = getMediaName(movie);
       modalDescription.textContent = getMediaSummary(movie) || "Ready to watch.";
+      updateModalLibraryActions(movie);
 
       const bg = getMediaBackdrop(movie);
       modalBanner.style.backgroundImage = bg
@@ -5667,6 +7091,7 @@
       modalEyebrow.textContent = "TV Series";
       modalTitle.textContent = show.name;
       modalDescription.textContent = getMediaSummary(show) || "Loading episode information…";
+      updateModalLibraryActions(show);
 
       seasonLabel.style.display = "";
       modalSelectorBar.style.display = "flex";
@@ -5759,6 +7184,8 @@
 
     function closeModal() {
       clearModalTrailer();
+      modalListPicker.hidden = true;
+      state.modalMedia = null;
       modalWrap.classList.remove("open");
       modalWrap.setAttribute("aria-hidden", "true");
       seasonLabel.style.display = "";
@@ -5774,6 +7201,8 @@
     typeNav.addEventListener("click", event => {
       const button = event.target.closest("button[data-type]");
       if (!button) return;
+      if (state.profileOpen) closeProfilePage();
+      if (state.discoverOpen) closeDiscoverPage();
 
       state.typeScope = button.dataset.type;
       typeNav.querySelectorAll("button").forEach(btn =>
@@ -5796,6 +7225,8 @@
     });
 
     searchInput.addEventListener("input", event => {
+      if (state.profileOpen) closeProfilePage();
+      if (state.discoverOpen) closeDiscoverPage();
       clearTimeout(state.searchTimer);
       const value = event.target.value;
       state.searchTimer = setTimeout(() => searchCatalogue(value), 300);
@@ -5814,7 +7245,29 @@
       accountMenu.hidden ? openAccountMenu() : closeAccountMenu();
     });
     accountMenu.addEventListener("click", event => event.stopPropagation());
+    discoverListsTopButton.addEventListener("click", () => {
+      if (state.discoverOpen) closeDiscoverPage();
+      else openDiscoverPage();
+    });
+    discoverPageBack.addEventListener("click", () => closeDiscoverPage());
+    profileButton.addEventListener("click", openProfilePage);
     logoutButton.addEventListener("click", logoutAccount);
+    profileBack.addEventListener("click", closeProfilePage);
+    profileTabs.addEventListener("click", event => {
+      const button = event.target.closest("[data-profile-tab]");
+      if (button) setProfileTab(button.dataset.profileTab);
+    });
+    profileClearHistory.addEventListener("click", clearProfileHistory);
+    profilePictureInput.addEventListener("change", changeProfilePicture);
+    profilePictureRemove.addEventListener("click", removeProfilePicture);
+    createListForm.addEventListener("submit", createUserList);
+    discoverListsRefresh.addEventListener("click", refreshDiscoverLists);
+    discoverListBack.addEventListener("click", renderDiscoverLists);
+    profileUsernameForm.addEventListener("submit", submitProfileUsername);
+    profilePasswordForm.addEventListener("submit", submitProfilePassword);
+    profileLogoutButton.addEventListener("click", logoutAccount);
+    watchLaterButton.addEventListener("click", toggleModalWatchLater);
+    addToListButton.addEventListener("click", toggleModalListPicker);
     authClose.addEventListener("click", closeAuthModal);
     authSignInTab.addEventListener("click", () => setAuthMode("signin"));
     authRegisterTab.addEventListener("click", () => setAuthMode("register"));

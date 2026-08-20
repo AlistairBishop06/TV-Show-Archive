@@ -238,6 +238,8 @@ const state = {
   watchLater: [],
   userLists: [],
   discoverLists: [],
+  discoverListItems: new Map(),
+  expandedDiscoverLists: new Set(),
   modalMedia: null,
   personalLibraryLoaded: false
 };
@@ -895,13 +897,35 @@ function renderDiscoverLists() {
     return;
   }
   discoverListsContainer.innerHTML = state.discoverLists.map(list => `
-    <button class="discover-list-card" type="button" data-discover-list="${escapeHtml(list.id)}">
-      <div><strong>${escapeHtml(list.name)}</strong><div class="discover-list-meta">by ${escapeHtml(list.owner || "TV Archive user")}</div></div>
-      <div class="discover-list-meta">${Number(list.itemCount || 0)} title${Number(list.itemCount || 0) === 1 ? "" : "s"} →</div>
-    </button>`).join("");
+    <section class="discover-list-entry${state.expandedDiscoverLists.has(String(list.id)) ? " open" : ""}" data-discover-entry="${escapeHtml(list.id)}">
+      <button class="discover-list-card" type="button" data-discover-list="${escapeHtml(list.id)}"
+        aria-expanded="${state.expandedDiscoverLists.has(String(list.id))}" aria-controls="discover-list-panel-${escapeHtml(list.id)}">
+        <div><strong>${escapeHtml(list.name)}</strong><div class="discover-list-meta">by ${escapeHtml(list.owner || "TV Archive user")}</div></div>
+        <div class="discover-list-summary">
+          <span class="discover-list-meta">${Number(list.itemCount || 0)} title${Number(list.itemCount || 0) === 1 ? "" : "s"}</span>
+          <svg class="discover-list-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+      </button>
+      <div id="discover-list-panel-${escapeHtml(list.id)}" class="discover-list-expansion" aria-hidden="${!state.expandedDiscoverLists.has(String(list.id))}"${state.expandedDiscoverLists.has(String(list.id)) ? "" : " inert"}>
+        <div class="discover-list-expansion-inner">
+          <div class="discover-list-toolbar">
+            <button class="discover-list-share" type="button" data-discover-share="${escapeHtml(list.id)}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="10.5" x2="15.4" y2="6.5"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/></svg>
+              <span>Share list</span>
+            </button>
+          </div>
+          <div class="discover-inline-status">Loading titles...</div>
+          <div class="library-grid discover-inline-grid"></div>
+        </div>
+      </div>
+    </section>`).join("");
   discoverListsContainer.querySelectorAll("[data-discover-list]").forEach(button => {
-    button.addEventListener("click", () => openDiscoverList(button.dataset.discoverList));
+    button.addEventListener("click", () => toggleDiscoverList(button.dataset.discoverList));
   });
+  discoverListsContainer.querySelectorAll("[data-discover-share]").forEach(button => {
+    button.addEventListener("click", () => shareDiscoverList(button.dataset.discoverShare, button));
+  });
+  state.expandedDiscoverLists.forEach(listId => renderExpandedDiscoverList(listId));
 }
 
 async function refreshDiscoverLists() {
@@ -909,20 +933,117 @@ async function refreshDiscoverLists() {
   try {
     const data = await apiFetch("/api/lists/discover");
     state.discoverLists = Array.isArray(data?.lists) ? data.lists : [];
+    state.discoverListItems.clear();
+    state.expandedDiscoverLists.clear();
+    syncDiscoverListUrl(null);
     renderDiscoverLists();
   } catch (error) { window.alert(error.message || "Could not load public lists."); }
   finally { discoverListsRefresh.disabled = false; }
 }
 
-async function openDiscoverList(listId) {
+function setDiscoverListExpanded(listId, expanded) {
+  const normalizedId = String(listId);
+  const entry = discoverListsContainer.querySelector(`[data-discover-entry="${CSS.escape(normalizedId)}"]`);
+  if (!entry) return;
+  const button = entry.querySelector("[data-discover-list]");
+  const panel = entry.querySelector(".discover-list-expansion");
+  entry.classList.toggle("open", expanded);
+  button?.setAttribute("aria-expanded", String(expanded));
+  panel?.setAttribute("aria-hidden", String(!expanded));
+  if (expanded) panel?.removeAttribute("inert");
+  else panel?.setAttribute("inert", "");
+}
+
+function renderExpandedDiscoverList(listId) {
+  const normalizedId = String(listId);
+  const entry = discoverListsContainer.querySelector(`[data-discover-entry="${CSS.escape(normalizedId)}"]`);
+  const grid = entry?.querySelector(".discover-inline-grid");
+  const status = entry?.querySelector(".discover-inline-status");
+  if (!grid || !status || !state.discoverListItems.has(normalizedId)) return;
+  status.hidden = true;
+  renderLibraryGrid(grid, state.discoverListItems.get(normalizedId));
+}
+
+function syncDiscoverListUrl(listId) {
+  if (APP_PAGE !== "discover") return;
+  const url = new URL(window.location.href);
+  if (listId) url.searchParams.set("list", String(listId));
+  else url.searchParams.delete("list");
+  window.history.replaceState(window.history.state, "", url);
+}
+
+async function copyTextToClipboard(value) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {
+      // Fall through for browsers that block the Clipboard API.
+    }
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("Copy failed");
+}
+
+async function shareDiscoverList(listId, button) {
+  const shareUrl = new URL("discover.html", window.location.href);
+  shareUrl.search = "";
+  shareUrl.hash = "";
+  shareUrl.searchParams.set("list", String(listId));
+  const label = button.querySelector("span");
   try {
-    const data = await apiFetch(`/api/lists/${encodeURIComponent(listId)}/browse`);
-    discoverListIndex.hidden = true;
-    discoverListDetail.hidden = false;
-    discoverListTitle.textContent = data?.list?.name || "Public list";
-    discoverListOwner.textContent = `Created by ${data?.list?.owner || "TV Archive user"}`;
-    renderLibraryGrid(discoverListItems, data?.items || []);
-  } catch (error) { window.alert(error.message || "Could not open this list."); }
+    await copyTextToClipboard(shareUrl.href);
+    if (label) label.textContent = "Link copied";
+  } catch {
+    if (label) label.textContent = "Could not copy";
+  }
+  window.setTimeout(() => {
+    if (label?.isConnected) label.textContent = "Share list";
+  }, 1800);
+}
+
+async function toggleDiscoverList(listId) {
+  const normalizedId = String(listId);
+  if (state.expandedDiscoverLists.has(normalizedId)) {
+    state.expandedDiscoverLists.delete(normalizedId);
+    setDiscoverListExpanded(normalizedId, false);
+    syncDiscoverListUrl(null);
+    return;
+  }
+
+  state.expandedDiscoverLists.forEach(openListId => setDiscoverListExpanded(openListId, false));
+  state.expandedDiscoverLists.clear();
+  state.expandedDiscoverLists.add(normalizedId);
+  setDiscoverListExpanded(normalizedId, true);
+  syncDiscoverListUrl(normalizedId);
+  if (state.discoverListItems.has(normalizedId)) {
+    renderExpandedDiscoverList(normalizedId);
+    return;
+  }
+
+  try {
+    const entry = discoverListsContainer.querySelector(`[data-discover-entry="${CSS.escape(normalizedId)}"]`);
+    const status = entry?.querySelector(".discover-inline-status");
+    if (status) {
+      status.hidden = false;
+      status.textContent = "Loading titles...";
+    }
+    const data = await apiFetch(`/api/lists/${encodeURIComponent(normalizedId)}/browse`);
+    state.discoverListItems.set(normalizedId, Array.isArray(data?.items) ? data.items : []);
+    renderExpandedDiscoverList(normalizedId);
+  } catch (error) {
+    const entry = discoverListsContainer.querySelector(`[data-discover-entry="${CSS.escape(normalizedId)}"]`);
+    const status = entry?.querySelector(".discover-inline-status");
+    if (status) status.textContent = error.message || "Could not load this list.";
+  }
 }
 
 async function resizeProfilePicture(file) {
@@ -1035,6 +1156,12 @@ async function openDiscoverPage() {
     const data = await apiFetch("/api/lists/discover");
     state.discoverLists = Array.isArray(data?.lists) ? data.lists : [];
     renderDiscoverLists();
+    const requestedListId = APP_PAGE === "discover"
+      ? new URLSearchParams(window.location.search).get("list")
+      : "";
+    if (requestedListId && state.discoverLists.some(list => String(list.id) === requestedListId)) {
+      await toggleDiscoverList(requestedListId);
+    }
   } catch (error) {
     console.error("Could not load public lists", error);
     discoverListsContainer.innerHTML = `<div class="profile-empty">${escapeHtml(error.message || "Could not load public lists.")}</div>`;

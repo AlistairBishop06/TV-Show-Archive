@@ -1,6 +1,81 @@
 const TVMAZE_API = "https://api.tvmaze.com";
 const CINEMETA_API = "https://v3-cinemeta.strem.io";
 const APP_PAGE = document.body.dataset.page || "home";
+const PAGE_TRANSITION_MS = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 160;
+let pageNavigationPending = false;
+const pageSkeleton = document.createElement("div");
+const skeletonPageType = APP_PAGE === "auth"
+  ? "auth"
+  : APP_PAGE === "live"
+    ? "live"
+    : APP_PAGE === "discover"
+      ? "discover"
+      : (["profile", "search", "collection"].includes(APP_PAGE) ? "utility" : "catalogue");
+pageSkeleton.className = `page-skeleton ${skeletonPageType}`;
+pageSkeleton.setAttribute("aria-hidden", "true");
+const skeletonBlocks = (count, className) => Array.from(
+  { length: count },
+  () => `<div class="skeleton-block ${className}"></div>`
+).join("");
+
+if (skeletonPageType === "live") {
+  pageSkeleton.innerHTML = `
+    <div class="skeleton-main skeleton-live-main">
+      <div class="skeleton-live-intro">
+        <div class="skeleton-block skeleton-eyebrow"></div>
+        <div class="skeleton-block skeleton-live-title"></div>
+        <div class="skeleton-block skeleton-copy-line"></div>
+      </div>
+      <div class="skeleton-block skeleton-group-title"></div>
+      <div class="skeleton-live-grid">
+        ${skeletonBlocks(6, "skeleton-live-card")}
+      </div>
+      <div class="skeleton-block skeleton-group-title skeleton-group-title-secondary"></div>
+      <div class="skeleton-live-grid">
+        ${skeletonBlocks(4, "skeleton-live-card")}
+      </div>
+    </div>`;
+} else if (skeletonPageType === "discover") {
+  const discoverRows = Array.from({ length: 5 }, () => `
+    <div class="skeleton-discover-row">
+      <div class="skeleton-discover-copy">
+        <div class="skeleton-block skeleton-discover-name"></div>
+        <div class="skeleton-block skeleton-discover-meta"></div>
+      </div>
+      <div class="skeleton-block skeleton-discover-count"></div>
+    </div>`).join("");
+  pageSkeleton.innerHTML = `
+    <div class="skeleton-main skeleton-discover-main">
+      <div class="skeleton-block skeleton-eyebrow"></div>
+      <div class="skeleton-block skeleton-discover-title"></div>
+      <div class="skeleton-block skeleton-copy-line"></div>
+      <div class="skeleton-discover-panel">
+        <div class="skeleton-discover-panel-head">
+          <div class="skeleton-block skeleton-discover-panel-title"></div>
+          <div class="skeleton-block skeleton-discover-button"></div>
+        </div>
+        <div class="skeleton-discover-list">${discoverRows}</div>
+      </div>
+    </div>`;
+} else {
+  pageSkeleton.innerHTML = `
+    <div class="skeleton-main">
+      <div class="skeleton-block skeleton-hero"></div>
+      <div class="skeleton-block skeleton-heading"></div>
+      <div class="skeleton-block skeleton-panel"></div>
+      <div class="skeleton-cards">
+        ${skeletonBlocks(7, "skeleton-card")}
+      </div>
+    </div>`;
+}
+document.body.appendChild(pageSkeleton);
+function syncSkeletonTop() {
+  const headerHeight = document.querySelector("header")?.getBoundingClientRect().height || 69;
+  document.documentElement.style.setProperty("--skeleton-top", `${Math.ceil(headerHeight)}px`);
+}
+syncSkeletonTop();
+window.addEventListener("resize", syncSkeletonTop);
+document.body.setAttribute("aria-busy", "true");
 const HERO_TRAILER_CACHE = new Map();
 let heroTrailerRequestId = 0;
 let modalTrailerRequestId = 0;
@@ -18,6 +93,7 @@ const HOME_PAGE_BATCH = 1;
 const WATCH_HISTORY_KEY = "showhub-watch-history-v2";
 const PENDING_WATCH_HISTORY_KEY_PREFIX = "showhub-pending-watch-progress-v1";
 const AUTH_TOKEN_KEY = "showhub-auth-token-v1";
+const AUTH_USER_CACHE_KEY = "showhub-auth-user-v1";
 const LEGACY_WATCH_HISTORY_KEY = "showhub-watch-history-v1";
 const MAX_WATCH_HISTORY = 40;
 const MIN_ITEMS_PER_GENRE_ROW = 5;
@@ -244,6 +320,9 @@ const authPassword = el("authPassword");
 const authError = el("authError");
 const authSubmit = el("authSubmit");
 
+const cachedAccountUser = getAuthToken() ? readCachedAccountUser() : null;
+if (cachedAccountUser) setAccountUser(cachedAccountUser, { persist: false });
+
 function migrateWatchHistory() {
   if (localStorage.getItem(WATCH_HISTORY_KEY)) return;
   const legacy = localStorage.getItem(LEGACY_WATCH_HISTORY_KEY);
@@ -354,6 +433,24 @@ function getAuthToken() {
 function saveAuthToken(token) {
   if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
   else localStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
+function readCachedAccountUser() {
+  try {
+    const user = JSON.parse(localStorage.getItem(AUTH_USER_CACHE_KEY) || "null");
+    return user?.id && user?.username ? user : null;
+  } catch {
+    return null;
+  }
+}
+
+function cacheAccountUser(user) {
+  try {
+    if (user) localStorage.setItem(AUTH_USER_CACHE_KEY, JSON.stringify(user));
+    else localStorage.removeItem(AUTH_USER_CACHE_KEY);
+  } catch {
+    // The authenticated session still works if local storage is unavailable.
+  }
 }
 
 function clearAuthSession() {
@@ -1026,9 +1123,10 @@ async function submitProfilePassword(event) {
   }
 }
 
-function setAccountUser(user) {
+function setAccountUser(user, { persist = true } = {}) {
   const previousUserId = state.user?.id || null;
   state.user = user || null;
+  if (persist) cacheAccountUser(state.user);
   closeAccountMenu();
 
   if (!state.user) {
@@ -1080,12 +1178,36 @@ function authReturnPath() {
   return /^\.\/[a-z0-9_-]+\.html(?:[?#].*)?$/i.test(value) ? value : "./index.html";
 }
 
+function navigateToPage(destination, { replace = false, back = false } = {}) {
+  if (pageNavigationPending) return;
+
+  if (!back) {
+    const target = new URL(destination, window.location.href);
+    if (!replace && target.href === window.location.href) return;
+  }
+
+  pageNavigationPending = true;
+  document.body.setAttribute("aria-busy", "true");
+  document.body.classList.remove("page-ready");
+  document.body.classList.add("page-leaving");
+
+  window.setTimeout(() => {
+    if (back) {
+      window.history.back();
+    } else if (replace) {
+      window.location.replace(destination);
+    } else {
+      window.location.href = destination;
+    }
+  }, PAGE_TRANSITION_MS);
+}
+
 function openAuthModal(mode = "signin") {
   if (APP_PAGE !== "auth") {
     const currentFile = window.location.pathname.split("/").filter(Boolean).pop() || "index.html";
     const returnPath = `./${currentFile}${window.location.search}`;
     const params = new URLSearchParams({ mode, return: returnPath });
-    window.location.href = `./signin.html?${params.toString()}`;
+    navigateToPage(`./signin.html?${params.toString()}`);
     return;
   }
 
@@ -1103,7 +1225,7 @@ function closeAuthModal({ navigateHome = true } = {}) {
   if (!playerScreen.classList.contains("open") && !modalWrap.classList.contains("open")) {
     document.body.style.overflow = "";
   }
-  if (APP_PAGE === "auth" && navigateHome) window.location.href = "./index.html";
+  if (APP_PAGE === "auth" && navigateHome) navigateToPage("./index.html");
 }
 
 function openAccountMenu() {
@@ -1189,7 +1311,7 @@ async function restoreAccountSession() {
     if (error.status === 401) clearAuthSession();
     else {
       console.warn("Account session check failed", error);
-      setAccountUser(null);
+      if (!state.user) setAccountUser(null);
     }
   }
 }
@@ -1217,7 +1339,7 @@ async function submitAuthForm(event) {
     authForm.reset();
     await syncWatchHistoryFromAccount();
     if (APP_PAGE === "auth") {
-      window.location.replace(authReturnPath());
+      navigateToPage(authReturnPath(), { replace: true });
       return;
     }
     if (APP_PAGE === "profile") await openProfilePage();
@@ -1237,7 +1359,7 @@ async function logoutAccount() {
   } finally {
     clearAuthSession();
     if (APP_PAGE === "profile" || APP_PAGE === "discover") {
-      window.location.replace("./index.html");
+      navigateToPage("./index.html", { replace: true });
     }
   }
 }
@@ -2049,7 +2171,7 @@ function openCollectionView(title, items, collection = null) {
       scope: descriptor.scope || state.typeScope
     });
     if (descriptor.genre) params.set("genre", descriptor.genre);
-    window.location.href = `./collection.html?${params.toString()}`;
+    navigateToPage(`./collection.html?${params.toString()}`);
     return;
   }
 
@@ -3636,7 +3758,7 @@ searchInput.addEventListener("input", event => {
       const query = value.trim();
       if (query) {
         const scope = ["tv", "movie"].includes(state.typeScope) ? state.typeScope : "all";
-        window.location.href = `./search.html?q=${encodeURIComponent(query)}&scope=${encodeURIComponent(scope)}`;
+        navigateToPage(`./search.html?q=${encodeURIComponent(query)}&scope=${encodeURIComponent(scope)}`);
       }
     }, 500);
     return;
@@ -3648,8 +3770,8 @@ loadMoreButton.addEventListener("click", loadMoreTitles);
 collectionLoadMoreButton.addEventListener("click", loadMoreCollectionTitles);
 collectionBack.addEventListener("click", () => {
   if (APP_PAGE === "collection") {
-    if (window.history.length > 1) window.history.back();
-    else window.location.href = "./index.html";
+    if (window.history.length > 1) navigateToPage("", { back: true });
+    else navigateToPage("./index.html");
     return;
   }
   closeCollectionView();
@@ -3664,10 +3786,10 @@ accountButton.addEventListener("click", event => {
   accountMenu.hidden ? openAccountMenu() : closeAccountMenu();
 });
 accountMenu.addEventListener("click", event => event.stopPropagation());
-discoverPageBack.addEventListener("click", () => { window.location.href = "./index.html"; });
-profileButton.addEventListener("click", () => { window.location.href = "./profile.html"; });
+discoverPageBack.addEventListener("click", () => navigateToPage("./index.html"));
+profileButton.addEventListener("click", () => navigateToPage("./profile.html"));
 logoutButton.addEventListener("click", logoutAccount);
-profileBack.addEventListener("click", () => { window.location.href = "./index.html"; });
+profileBack.addEventListener("click", () => navigateToPage("./index.html"));
 profileTabs.addEventListener("click", event => {
   const button = event.target.closest("[data-profile-tab]");
   if (button) setProfileTab(button.dataset.profileTab);
@@ -3691,6 +3813,18 @@ authModalWrap.addEventListener("click", event => {
   if (event.target === authModalWrap) closeAuthModal();
 });
 document.addEventListener("click", closeAccountMenu);
+
+document.addEventListener("click", event => {
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const link = event.target.closest("a[href]");
+  if (!link || link.target || link.hasAttribute("download")) return;
+
+  const target = new URL(link.href, window.location.href);
+  if (target.origin !== window.location.origin || !/\.html$/i.test(target.pathname)) return;
+
+  event.preventDefault();
+  navigateToPage(target.href);
+}, true);
 
 el("closeModal").addEventListener("click", closeModal);
 el("playerBack").addEventListener("click", () => closePlayer());
@@ -3833,7 +3967,7 @@ async function initialiseTVArchive() {
 
   if (APP_PAGE === "auth") {
     if (state.user) {
-      window.location.replace(authReturnPath());
+      navigateToPage(authReturnPath(), { replace: true });
       return;
     }
     openAuthModal(initialParams.get("mode") === "register" ? "register" : "signin");
@@ -3872,4 +4006,11 @@ window.addEventListener("pageshow", () => {
   else renderContinueWatching();
 });
 
-initialiseTVArchive();
+initialiseTVArchive()
+  .catch(error => console.error("TV Archive failed to initialise", error))
+  .finally(() => {
+    window.requestAnimationFrame(() => {
+      document.body.classList.add("page-ready");
+      document.body.setAttribute("aria-busy", "false");
+    });
+  });

@@ -942,6 +942,8 @@ select {
 
 html {
   background: var(--bg);
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
 }
 
 body {
@@ -960,6 +962,149 @@ body::before {
   pointer-events: none;
   z-index: -1;
   background: linear-gradient(180deg, rgba(236,53,56,.055), transparent 72%);
+}
+
+.page-skeleton {
+  position: fixed;
+  inset: var(--skeleton-top, 69px) 0 0;
+  z-index: 29;
+  overflow: hidden;
+  background: var(--bg);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: none;
+  transition: opacity .26s ease, visibility 0s linear 0s;
+}
+
+body.page-ready .page-skeleton {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .3s ease, visibility 0s linear .3s;
+}
+
+body.page-leaving .page-skeleton {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.skeleton-main {
+  width: min(1600px, calc(100% - 64px));
+  margin: 0 auto;
+}
+
+.skeleton-block {
+  overflow: hidden;
+  border-radius: 8px;
+  background: linear-gradient(100deg, #15151a 24%, #23232a 38%, #15151a 52%);
+  background-size: 240% 100%;
+  animation: skeleton-shimmer 1.25s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+.skeleton-main { padding-top: 28px; }
+.skeleton-hero { width: 100%; height: min(50vh, 470px); border-radius: 18px; }
+.skeleton-heading { width: min(280px, 55%); height: 24px; margin: 34px 0 16px; }
+.skeleton-cards { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 14px; }
+.skeleton-card { aspect-ratio: 2 / 3; border-radius: var(--poster-radius); }
+
+.page-skeleton.utility .skeleton-hero { display: none; }
+.page-skeleton.utility .skeleton-main { padding-top: 58px; }
+.page-skeleton.utility .skeleton-heading { width: 340px; height: 42px; margin: 0 0 28px; }
+.skeleton-panel { display: none; height: 360px; border-radius: 16px; }
+.page-skeleton.utility .skeleton-panel { display: block; }
+.page-skeleton.utility .skeleton-cards { margin-top: 22px; grid-template-columns: repeat(5, minmax(0,1fr)); }
+
+.page-skeleton.live .skeleton-main { padding-top: 34px; }
+.skeleton-live-intro { margin-bottom: 32px; }
+.skeleton-eyebrow { width: 82px; height: 11px; margin-bottom: 12px; }
+.skeleton-live-title { width: min(310px, 65%); height: 46px; margin-bottom: 13px; }
+.skeleton-copy-line { width: min(430px, 78%); height: 14px; }
+.skeleton-group-title { width: 220px; height: 22px; margin-bottom: 14px; }
+.skeleton-group-title-secondary { margin-top: 34px; }
+.skeleton-live-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 13px;
+}
+.skeleton-live-card { height: 128px; border-radius: 14px; }
+
+.page-skeleton.discover .skeleton-main { padding-top: 58px; }
+.skeleton-discover-title { width: min(340px, 72%); height: 42px; margin-bottom: 13px; }
+.skeleton-discover-panel {
+  margin-top: 28px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255,255,255,.025);
+}
+.skeleton-discover-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.skeleton-discover-panel-title { width: min(210px, 48%); height: 24px; }
+.skeleton-discover-button { width: 92px; height: 38px; border-radius: 10px; }
+.skeleton-discover-list { display: grid; gap: 12px; }
+.skeleton-discover-row {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 15px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255,255,255,.03);
+}
+.skeleton-discover-copy { flex: 1; min-width: 0; }
+.skeleton-discover-name { width: min(230px, 60%); height: 16px; }
+.skeleton-discover-meta { width: min(150px, 44%); height: 10px; margin-top: 9px; }
+.skeleton-discover-count { width: 78px; height: 12px; flex: 0 0 auto; }
+
+.page-skeleton.auth .skeleton-main {
+  display: grid;
+  place-items: center;
+  min-height: calc(100vh - var(--skeleton-top, 69px));
+  padding: 24px;
+}
+.page-skeleton.auth .skeleton-hero,
+.page-skeleton.auth .skeleton-heading,
+.page-skeleton.auth .skeleton-cards { display: none; }
+.page-skeleton.auth .skeleton-panel { display: block; width: min(440px, 100%); height: 470px; }
+
+@media (max-width: 1050px) {
+  .skeleton-cards { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .skeleton-main { width: calc(100% - 24px); }
+  .skeleton-main { padding-top: 16px; }
+  .skeleton-hero { height: 390px; border-radius: 14px; }
+  .skeleton-cards,
+  .page-skeleton.utility .skeleton-cards { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+  .page-skeleton.utility .skeleton-main { padding-top: 34px; }
+  .page-skeleton.live .skeleton-main,
+  .page-skeleton.discover .skeleton-main { padding-top: 28px; }
+  .skeleton-discover-panel { margin-top: 22px; padding: 14px; }
+  .skeleton-discover-row { min-height: 68px; padding: 12px; }
+  .page-skeleton.auth .skeleton-main { min-height: calc(100vh - var(--skeleton-top, 148px)); }
+}
+
+@media (max-width: 620px) {
+  .skeleton-live-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .skeleton-live-card { height: 120px; }
+}
+
+@media (max-width: 420px) {
+  .skeleton-live-grid { grid-template-columns: 1fr; }
+  .skeleton-discover-count { width: 56px; }
 }
 
 ::selection {
@@ -1053,14 +1198,25 @@ header {
   height: 2px;
   border-radius: 999px 999px 0 0;
   background: var(--accent-2);
+  opacity: 0;
   transform: scaleX(0);
   transform-origin: center;
-  transition: transform .18s ease;
+  transition: transform .32s cubic-bezier(.2,.75,.2,1), opacity .2s ease;
 }
 
 .type-nav a:hover,
 .discover-nav-link:hover {
   color: #d8d8dd;
+}
+
+.type-nav a:hover::after,
+.type-nav a:focus-visible::after,
+.discover-nav-link:hover::after,
+.discover-nav-link:focus-visible::after,
+.type-nav a.active::after,
+.discover-nav-link.active::after {
+  opacity: 1;
+  transform: scaleX(1);
 }
 
 .type-nav a.active,
@@ -1071,6 +1227,7 @@ header {
 
 .type-nav a.active::after,
 .discover-nav-link.active::after {
+  opacity: 1;
   transform: scaleX(1);
 }
 

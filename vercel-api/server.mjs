@@ -381,7 +381,7 @@ async function fetchSkySportsSchedule(streamId, guideSid, date) {
   const response = await fetch(url, {
     headers: {
       Accept: "application/json, text/javascript, */*",
-      "User-Agent": "ShowHub/1.0"
+      "User-Agent": "TVArchive/1.0"
     },
     signal: AbortSignal.timeout(8000)
   });
@@ -687,6 +687,6 @@ export default app;
 // it is not something you add to .env.
 if (!process.env.VERCEL) {
   app.listen(PORT, () => {
-    console.log(`ShowHub API running on http://localhost:${PORT}`);
+    console.log(`TV Archive API running on http://localhost:${PORT}`);
   });
 }

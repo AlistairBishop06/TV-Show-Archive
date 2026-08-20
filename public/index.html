@@ -4,7 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#050507" />
-  <title>ShowHub</title>
+  <title>TV Archive</title>
+  <link rel="icon" type="image/png" href="./assets/tv-archive-icon.png" />
+  <link rel="apple-touch-icon" href="./assets/tv-archive-icon.png" />
   <style>
     :root {
       --bg: #08090c;
@@ -57,10 +59,17 @@
     }
 
     .brand {
-      font-size: 1.25rem;
-      font-weight: 850;
-      letter-spacing: -.045em;
+      display: inline-flex;
+      align-items: center;
       white-space: nowrap;
+      user-select: none;
+    }
+
+    .brand-logo {
+      display: block;
+      height: clamp(30px, 3vw, 42px);
+      width: auto;
+      max-width: min(42vw, 300px);
     }
 
     .brand span {
@@ -913,7 +922,7 @@
 
     /* ============================================================
        Professional streaming-service visual system
-       Keeps all existing ShowHub behaviour; this layer is visual only.
+       Keeps all existing TV Archive behaviour; this layer is visual only.
        ============================================================ */
 
     :root {
@@ -993,13 +1002,18 @@
 
     .brand {
       display: inline-flex;
-      align-items: baseline;
+      align-items: center;
       gap: 0;
-      font-size: 1.3rem;
-      font-weight: 900;
-      letter-spacing: -.055em;
       color: #fff;
       user-select: none;
+    }
+
+    .brand-logo {
+      display: block;
+      height: 38px;
+      width: auto;
+      max-width: min(42vw, 300px);
+      object-fit: contain;
     }
 
     .brand .brand-show {
@@ -1750,8 +1764,9 @@
         gap: 10px 14px;
       }
 
-      .brand {
-        font-size: 1.18rem;
+      .brand-logo {
+        height: 34px;
+        max-width: 56vw;
       }
 
       .type-nav {
@@ -1923,8 +1938,9 @@
         width: calc(100% - 20px);
       }
 
-      .brand {
-        font-size: 1.12rem;
+      .brand-logo {
+        height: 30px;
+        max-width: 62vw;
       }
 
       .search input {
@@ -2589,12 +2605,154 @@
       .live-channel-grid { grid-template-columns: 1fr; }
     }
 
+  
+
+    /* Featured trailer background. The backdrop remains underneath as a fallback. */
+    .hero-bg {
+      z-index: 0;
+      transition: opacity .55s ease;
+    }
+
+    .hero-trailer {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      z-index: 1;
+      width: 100vw;
+      min-width: 100%;
+      height: 56.25vw;
+      min-height: 100%;
+      border: 0;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      transition: opacity .65s ease;
+      background: #050507;
+    }
+
+    .hero-trailer.visible {
+      opacity: 1;
+    }
+
+    .hero.trailer-visible .hero-bg {
+      opacity: 0;
+    }
+
+    .hero::after {
+      z-index: 2;
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 3;
+    }
+
+    .trailer-sound-toggle {
+      position: absolute;
+      z-index: 6;
+      display: inline-grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      padding: 0;
+      border: 1px solid rgba(255,255,255,.28);
+      border-radius: 999px;
+      background: rgba(8,9,12,.58);
+      color: #fff;
+      cursor: pointer;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px rgba(0,0,0,.24);
+      transition: background .16s ease, transform .16s ease, border-color .16s ease;
+    }
+
+    .trailer-sound-toggle[hidden] {
+      display: none;
+    }
+
+    .trailer-sound-toggle:hover {
+      background: rgba(8,9,12,.8);
+      border-color: rgba(255,255,255,.48);
+      transform: scale(1.04);
+    }
+
+    .trailer-sound-toggle .icon {
+      width: 19px;
+      height: 19px;
+    }
+
+    .hero-sound-toggle {
+      right: 20px;
+      bottom: 20px;
+    }
+
+    .modal-banner {
+      overflow: hidden;
+    }
+
+    .modal-banner::before {
+      z-index: 2;
+    }
+
+    .modal-banner > .eyebrow,
+    .modal-banner > h2 {
+      position: relative;
+      z-index: 3;
+    }
+
+    .modal-banner .close {
+      z-index: 6;
+    }
+
+    .modal-trailer {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      z-index: 1;
+      width: 100%;
+      height: 177.78%;
+      min-width: 100%;
+      min-height: 100%;
+      border: 0;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      transition: opacity .55s ease;
+      background: #050507;
+    }
+
+    .modal-trailer.visible {
+      opacity: 1;
+    }
+
+    .modal-sound-toggle {
+      right: 68px;
+      top: 17px;
+    }
+
+    @media (max-width: 760px) {
+      .hero-trailer {
+        width: 177.78%;
+        height: 100%;
+      }
+
+      .hero-sound-toggle {
+        right: 14px;
+        bottom: 14px;
+      }
+
+      .modal-trailer {
+        width: 177.78%;
+        height: 100%;
+      }
+    }
+
   </style>
 </head>
 <body>
   <header>
     <div class="app-shell topbar">
-      <div class="brand" aria-label="ShowHub"><span class="brand-show">Show</span><span>Hub</span></div>
+      <div class="brand" aria-label="TV Archive"><img class="brand-logo" src="./assets/tv-archive-logo.png" alt="TV Archive" /></div>
 
       <div class="type-nav" id="typeNav">
         <button data-type="all" class="active" type="button">All</button>
@@ -2630,6 +2788,16 @@
   <main class="app-shell">
     <section id="heroSection" class="hero" style="display:none">
       <div id="heroBg" class="hero-bg"></div>
+      <iframe
+        id="heroTrailer"
+        class="hero-trailer"
+        title="Featured trailer"
+        tabindex="-1"
+        aria-hidden="true"
+        allow="autoplay; encrypted-media; picture-in-picture"
+        referrerpolicy="strict-origin-when-cross-origin"
+      ></iframe>
+      <button id="heroSoundToggle" class="trailer-sound-toggle hero-sound-toggle" type="button" aria-label="Unmute trailer" title="Unmute trailer" hidden></button>
       <div class="hero-content">
         <div id="heroEyebrow" class="eyebrow">Featured</div>
         <h1 id="heroTitle"></h1>
@@ -2655,7 +2823,7 @@
         <div>
           <div class="eyebrow">Live now</div>
           <h1>Live Sports</h1>
-          <p>Watch Sky Sports channels live without leaving ShowHub.</p>
+          <p>Watch Sky Sports channels live without leaving TV Archive.</p>
         </div>
       </div>
       <div id="liveSportsContent"></div>
@@ -2702,7 +2870,7 @@
     <div class="player-topbar">
       <button id="playerBack" class="player-back">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
-        Back to ShowHub
+        Back to TV Archive
       </button>
       <div class="player-meta">
         <div id="playerTitle" class="player-title">Now Playing</div>
@@ -2745,18 +2913,28 @@
   <div id="modalWrap" class="modal-wrap" aria-hidden="true">
     <div class="modal">
       <div id="modalBanner" class="modal-banner">
+        <iframe
+          id="modalTrailer"
+          class="modal-trailer"
+          title="Title trailer"
+          tabindex="-1"
+          aria-hidden="true"
+          allow="autoplay; encrypted-media; picture-in-picture"
+          referrerpolicy="strict-origin-when-cross-origin"
+        ></iframe>
+        <button id="modalSoundToggle" class="trailer-sound-toggle modal-sound-toggle" type="button" aria-label="Unmute trailer" title="Unmute trailer" hidden></button>
         <button id="closeModal" class="close icon-btn" aria-label="Close">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
         </button>
-        <div class="eyebrow">TV Series</div>
+        <div id="modalEyebrow" class="eyebrow">TV Series</div>
         <h2 id="modalTitle"></h2>
       </div>
 
       <div class="modal-content">
         <p id="modalDescription" class="modal-desc"></p>
 
-        <div class="selector-bar">
-          <label>
+        <div id="modalSelectorBar" class="selector-bar">
+          <label id="seasonLabel">
             Season
             <select id="seasonSelect"></select>
           </label>
@@ -2804,6 +2982,10 @@
   <script>
     const TVMAZE_API = "https://api.tvmaze.com";
     const CINEMETA_API = "https://v3-cinemeta.strem.io";
+    const HERO_TRAILER_CACHE = new Map();
+    let heroTrailerRequestId = 0;
+    let modalTrailerRequestId = 0;
+    let trailersMuted = true;
     const HOME_PAGE_BATCH = 1;
     const WATCH_HISTORY_KEY = "showhub-watch-history-v2";
     const PENDING_WATCH_HISTORY_KEY_PREFIX = "showhub-pending-watch-progress-v1";
@@ -2866,7 +3048,9 @@
       close: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>',
       chevronLeft: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
       chevronRight: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>',
-      play: '<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'
+      play: '<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+      volumeOn: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18 6a8.5 8.5 0 0 1 0 12"/></svg>',
+      volumeOff: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>'
     };
 
     const state = {
@@ -2910,6 +3094,8 @@
     const heroTitle = el("heroTitle");
     const heroDescription = el("heroDescription");
     const heroBg = el("heroBg");
+    const heroTrailer = el("heroTrailer");
+    const heroSoundToggle = el("heroSoundToggle");
     const heroBrowse = el("heroBrowse");
     const rowsContainer = el("rowsContainer");
     const searchResultsSection = el("searchResultsSection");
@@ -2925,8 +3111,13 @@
     const collectionLoadMoreButton = el("collectionLoadMoreButton");
     const modalWrap = el("modalWrap");
     const modalTitle = el("modalTitle");
+    const modalEyebrow = el("modalEyebrow");
     const modalDescription = el("modalDescription");
     const modalBanner = el("modalBanner");
+    const modalTrailer = el("modalTrailer");
+    const modalSoundToggle = el("modalSoundToggle");
+    const modalSelectorBar = el("modalSelectorBar");
+    const seasonLabel = el("seasonLabel");
     const seasonSelect = el("seasonSelect");
     const episodeGrid = el("episodeGrid");
     const continueButton = el("continueButton");
@@ -3087,7 +3278,7 @@
     async function apiFetch(path, options = {}) {
       const apiBase = String(window.SHOWHUB_API_BASE || "").replace(/\/+$/, "");
       if (!apiBase || apiBase.includes("YOUR-VERCEL-PROJECT")) {
-        const error = new Error("ShowHub API is not configured. Set SHOWHUB_API_BASE in public/config.js.");
+        const error = new Error("TV Archive API is not configured. Set SHOWHUB_API_BASE in public/config.js.");
         error.status = 0;
         throw error;
       }
@@ -3130,7 +3321,7 @@
         state.watchHistory = [];
         accountAvatar.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>';
         accountLabel.textContent = "Sign in";
-        accountButton.setAttribute("aria-label", "Sign in to ShowHub");
+        accountButton.setAttribute("aria-label", "Sign in to TV Archive");
         renderContinueWatching();
         return;
       }
@@ -3695,7 +3886,7 @@
         const open = () => {
           const media = map.get(card.dataset.key);
           if (!media) return;
-          if (getMediaType(media) === "movie") openMovie(media);
+          if (getMediaType(media) === "movie") openMovieDetails(media);
           else openShow(media);
         };
         card.addEventListener("click", open);
@@ -3856,7 +4047,7 @@
       const topRatedFull = [...scoped].sort((a, b) => getMediaRating(b) - getMediaRating(a));
       renderRow(
         rowsContainer,
-        "Popular on ShowHub",
+        "Popular on TV Archive",
         topRatedFull.slice(0, MAX_ITEMS_PER_ROW),
         topRatedFull,
         { kind: "popular", scope: state.typeScope }
@@ -4159,8 +4350,229 @@
       renderContinueWatching();
     }
 
+    function youtubeVideoId(value) {
+      const raw = String(value || "").trim();
+      if (/^[A-Za-z0-9_-]{11}$/.test(raw)) return raw;
+
+      try {
+        const url = new URL(raw);
+        if (url.hostname === "youtu.be") {
+          const id = url.pathname.split("/").filter(Boolean)[0] || "";
+          return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : "";
+        }
+
+        if (url.hostname.includes("youtube.com")) {
+          const queryId = url.searchParams.get("v") || "";
+          if (/^[A-Za-z0-9_-]{11}$/.test(queryId)) return queryId;
+
+          const parts = url.pathname.split("/").filter(Boolean);
+          const marker = parts.findIndex(part => ["embed", "shorts", "live"].includes(part));
+          const pathId = marker >= 0 ? (parts[marker + 1] || "") : "";
+          return /^[A-Za-z0-9_-]{11}$/.test(pathId) ? pathId : "";
+        }
+      } catch {
+        // Not a URL. It may still be a legacy Cinemeta source value.
+      }
+
+      return "";
+    }
+
+    function trailerYouTubeId(meta) {
+      const candidates = [];
+
+      const collect = (items, inheritedType = "") => {
+        if (!Array.isArray(items)) return;
+        items.forEach(item => {
+          if (!item) return;
+          if (typeof item === "string") {
+            candidates.push({ id: youtubeVideoId(item), type: inheritedType });
+            return;
+          }
+
+          const type = String(item.type || item.title || inheritedType || "");
+          const id = youtubeVideoId(
+            item.ytId ||
+            item.youtubeId ||
+            item.source ||
+            item.externalUrl ||
+            item.url ||
+            ""
+          );
+          candidates.push({ id, type });
+        });
+      };
+
+      collect(meta?.trailerStreams);
+      collect(meta?.trailers);
+
+      if (Array.isArray(meta?.videos)) {
+        meta.videos.slice(0, 3).forEach(video => {
+          collect(video?.trailerStreams, video?.title || "");
+          collect(video?.trailers, video?.title || "");
+        });
+      }
+
+      const valid = candidates.filter(candidate => candidate.id);
+      const trailer = valid.find(candidate => /trailer|teaser/i.test(candidate.type));
+      return (trailer || valid[0])?.id || "";
+    }
+
+    function updateTrailerSoundButtons() {
+      const icon = trailersMuted ? ICONS.volumeOff : ICONS.volumeOn;
+      const label = trailersMuted ? "Unmute trailer" : "Mute trailer";
+      [heroSoundToggle, modalSoundToggle].forEach(button => {
+        if (!button) return;
+        button.innerHTML = icon;
+        button.setAttribute("aria-label", label);
+        button.title = label;
+      });
+    }
+
+    function trailerFrameCommand(frame, command, args = []) {
+      try {
+        frame?.contentWindow?.postMessage(
+          JSON.stringify({ event: "command", func: command, args }),
+          "https://www.youtube-nocookie.com"
+        );
+      } catch {
+        // Keep the image fallback if the embedded player cannot be controlled.
+      }
+    }
+
+    function setTrailersMuted(muted) {
+      trailersMuted = Boolean(muted);
+      [heroTrailer, modalTrailer].forEach(frame => {
+        if (!frame?.classList.contains("visible")) return;
+        trailerFrameCommand(frame, trailersMuted ? "mute" : "unMute");
+      });
+      updateTrailerSoundButtons();
+    }
+
+    async function getTrailerVideoId(media) {
+      const imdbId = getImdbId(media);
+      if (!/^tt\d+$/.test(imdbId)) return "";
+
+      const mediaType = getMediaType(media) === "movie" ? "movie" : "series";
+      const cacheKey = `${mediaType}:${imdbId}`;
+      let videoId = HERO_TRAILER_CACHE.get(cacheKey);
+
+      if (videoId === undefined) {
+        try {
+          const data = await fetchJson(`${CINEMETA_API}/meta/${mediaType}/${encodeURIComponent(imdbId)}.json`);
+          videoId = trailerYouTubeId(data?.meta);
+        } catch (error) {
+          console.warn(`No trailer found for ${getMediaName(media)}`, error);
+          videoId = "";
+        }
+        HERO_TRAILER_CACHE.set(cacheKey, videoId);
+      }
+
+      return videoId || "";
+    }
+
+    function trailerEmbedUrl(videoId) {
+      const params = new URLSearchParams({
+        autoplay: "1",
+        mute: "1",
+        controls: "0",
+        loop: "1",
+        playlist: videoId,
+        playsinline: "1",
+        rel: "0",
+        iv_load_policy: "3",
+        disablekb: "1",
+        fs: "0",
+        enablejsapi: "1",
+        origin: window.location.origin
+      });
+      return `https://www.youtube-nocookie.com/embed/${videoId}?${params}`;
+    }
+
+    function clearHeroTrailer() {
+      heroTrailerRequestId += 1;
+      heroTrailer.classList.remove("visible");
+      heroSection.classList.remove("trailer-visible");
+      heroSoundToggle.hidden = true;
+      heroTrailer.removeAttribute("src");
+      heroTrailer.title = "Featured trailer";
+    }
+
+    function heroTrailerCommand(command) {
+      trailerFrameCommand(heroTrailer, command);
+    }
+
+    async function loadHeroTrailer(media) {
+      const requestId = ++heroTrailerRequestId;
+      heroTrailer.classList.remove("visible");
+      heroSection.classList.remove("trailer-visible");
+      heroSoundToggle.hidden = true;
+      heroTrailer.removeAttribute("src");
+
+      const videoId = await getTrailerVideoId(media);
+      if (requestId !== heroTrailerRequestId || state.heroMedia !== media || !videoId) return;
+
+      heroTrailer.title = `${getMediaName(media)} trailer`;
+      heroTrailer.onload = () => {
+        if (requestId !== heroTrailerRequestId || state.heroMedia !== media) return;
+        heroTrailer.classList.add("visible");
+        heroSection.classList.add("trailer-visible");
+        heroSoundToggle.hidden = false;
+        updateTrailerSoundButtons();
+        if (!trailersMuted) trailerFrameCommand(heroTrailer, "unMute");
+      };
+      heroTrailer.src = trailerEmbedUrl(videoId);
+    }
+
+    function clearModalTrailer() {
+      modalTrailerRequestId += 1;
+      modalTrailer.classList.remove("visible");
+      modalSoundToggle.hidden = true;
+      modalTrailer.removeAttribute("src");
+      modalTrailer.title = "Title trailer";
+    }
+
+    async function loadModalTrailer(media) {
+      const requestId = ++modalTrailerRequestId;
+      modalTrailer.classList.remove("visible");
+      modalSoundToggle.hidden = true;
+      modalTrailer.removeAttribute("src");
+
+      const videoId = await getTrailerVideoId(media);
+      if (requestId !== modalTrailerRequestId || !modalWrap.classList.contains("open") || !videoId) return;
+
+      modalTrailer.title = `${getMediaName(media)} trailer`;
+      modalTrailer.onload = () => {
+        if (requestId !== modalTrailerRequestId || !modalWrap.classList.contains("open")) return;
+        modalTrailer.classList.add("visible");
+        modalSoundToggle.hidden = false;
+        updateTrailerSoundButtons();
+        if (!trailersMuted) trailerFrameCommand(modalTrailer, "unMute");
+      };
+      modalTrailer.src = trailerEmbedUrl(videoId);
+    }
+
+    heroSoundToggle.addEventListener("click", event => {
+      event.stopPropagation();
+      setTrailersMuted(!trailersMuted);
+    });
+
+    modalSoundToggle.addEventListener("click", event => {
+      event.stopPropagation();
+      setTrailersMuted(!trailersMuted);
+    });
+
+    updateTrailerSoundButtons();
+
+    const heroVisibilityObserver = new IntersectionObserver(entries => {
+      const visible = entries.some(entry => entry.isIntersecting && entry.intersectionRatio > 0.08);
+      if (!heroTrailer.classList.contains("visible")) return;
+      heroTrailerCommand(visible ? "playVideo" : "pauseVideo");
+    }, { threshold: [0, 0.08] });
+    heroVisibilityObserver.observe(heroSection);
+
     function populateHero(media) {
       if (!media) {
+        clearHeroTrailer();
         heroSection.style.display = "none";
         return;
       }
@@ -4174,11 +4586,12 @@
       heroTitle.textContent = getMediaName(media);
       heroDescription.textContent = getMediaSummary(media) ||
         (isMovie
-          ? "Watch this film without leaving ShowHub."
-          : "Choose a season and episode and watch without leaving ShowHub.");
+          ? "Watch this film without leaving TV Archive."
+          : "Choose a season and episode and watch without leaving TV Archive.");
 
       const image = getMediaBackdrop(media);
       heroBg.style.backgroundImage = image ? `url("${image}")` : "";
+      loadHeroTrailer(media);
       heroBrowse.innerHTML = isMovie
         ? `${ICONS.play}Play movie`
         : `${ICONS.chevronRight}Browse episodes`;
@@ -4466,6 +4879,7 @@
     function openLiveSportsChannel(channel) {
       if (!requireSignedInForPlayback()) return;
 
+      heroTrailerCommand("pauseVideo");
       closeModal();
       // Live streams have no resume position, so they never enter watch history
       // and never create Neon progress writes.
@@ -4475,7 +4889,7 @@
 
       playerTitle.textContent = channel.name;
       playerSubtitle.textContent = `Live · ${channel.region}`;
-      document.title = `${channel.name} | ShowHub`;
+      document.title = `${channel.name} | TV Archive`;
 
       // Only live-sports embeds are sandboxed. The movie/TV provider detects
       // sandboxed frames and refuses playback, so those launches explicitly
@@ -4521,6 +4935,7 @@
     }
 
     function launchPlayer(media, url, subtitle, playbackState) {
+      heroTrailerCommand("pauseVideo");
       state.activePlayback = { media, ...playbackState };
       state.lastProgressWrite = 0;
       state.pendingEpisodeAdvance = false;
@@ -4529,9 +4944,9 @@
       playerSubtitle.textContent = subtitle;
 
       if (playbackState?.mediaType === "tv") {
-        document.title = `${getMediaName(media)} · S${playbackState.season}E${playbackState.episode} | ShowHub`;
+        document.title = `${getMediaName(media)} · S${playbackState.season}E${playbackState.episode} | TV Archive`;
       } else {
-        document.title = `${getMediaName(media)} | ShowHub`;
+        document.title = `${getMediaName(media)} | TV Archive`;
       }
 
       // Movies and TV must not be sandboxed: the playback provider rejects
@@ -4600,7 +5015,7 @@
       playerSubtitle.textContent =
         `Season ${season} · Episode ${episode}` +
         (episodeName ? ` · ${episodeName}` : "");
-      document.title = `${getMediaName(active.media)} · S${season}E${episode} | ShowHub`;
+      document.title = `${getMediaName(active.media)} · S${season}E${episode} | TV Archive`;
 
       const entry = makeWatchEntry(active.media, {
         mediaType: "tv",
@@ -4747,6 +5162,34 @@
       }
     }
 
+    function openMovieDetails(movie) {
+      if (!movie || !getImdbId(movie)) return;
+
+      state.currentShow = null;
+      state.currentEpisodes = [];
+      modalEyebrow.textContent = "Movie";
+      modalTitle.textContent = getMediaName(movie);
+      modalDescription.textContent = getMediaSummary(movie) || "Ready to watch.";
+
+      const bg = getMediaBackdrop(movie);
+      modalBanner.style.backgroundImage = bg
+        ? `url("${bg}")`
+        : "linear-gradient(135deg, rgba(124,92,255,.22), #151821)";
+
+      seasonLabel.style.display = "none";
+      modalSelectorBar.style.display = "flex";
+      episodeGrid.style.display = "none";
+      continueButton.disabled = false;
+      continueButton.innerHTML = `${ICONS.play}Play movie`;
+      continueButton.onclick = () => openMovie(movie);
+
+      heroTrailerCommand("pauseVideo");
+      modalWrap.classList.add("open");
+      modalWrap.setAttribute("aria-hidden", "false");
+      document.body.style.overflow = "hidden";
+      loadModalTrailer(movie);
+    }
+
     async function openMovie(movie, options = {}) {
       if (!requireSignedInForPlayback()) return;
       closeModal();
@@ -4810,11 +5253,12 @@
       state.pendingEpisodeAdvance = false;
       state.episodeAdvanceInFlight = false;
       document.body.style.overflow = "";
-      document.title = "ShowHub";
+      document.title = "TV Archive";
+      if (heroSection.style.display !== "none") heroTrailerCommand("playVideo");
 
       // Do not depend on history.back(): if another #watch entry is underneath
       // the current one, the app can return to the menu while leaving the watch
-      // URL active. Explicitly restore the ShowHub route instead.
+      // URL active. Explicitly restore the TV Archive route instead.
       if (resetRoute && (location.hash.startsWith("#watch=") || location.hash.startsWith("#live="))) {
         history.replaceState(
           { player: false },
@@ -4830,8 +5274,13 @@
       state.currentShow = show;
       state.currentSeason = 1;
       state.currentEpisodes = [];
+      modalEyebrow.textContent = "TV Series";
       modalTitle.textContent = show.name;
       modalDescription.textContent = getMediaSummary(show) || "Loading episode information…";
+
+      seasonLabel.style.display = "";
+      modalSelectorBar.style.display = "flex";
+      episodeGrid.style.display = "grid";
 
       const bg = getMediaBackdrop(show);
       modalBanner.style.backgroundImage = bg
@@ -4847,9 +5296,11 @@
         </div>
       `;
 
+      heroTrailerCommand("pauseVideo");
       modalWrap.classList.add("open");
       modalWrap.setAttribute("aria-hidden", "false");
       document.body.style.overflow = "hidden";
+      loadModalTrailer(show);
 
       try {
         const episodes = await fetchJson(`${TVMAZE_API}/shows/${show.id}/episodes`);
@@ -4914,9 +5365,15 @@
     }
 
     function closeModal() {
+      clearModalTrailer();
       modalWrap.classList.remove("open");
       modalWrap.setAttribute("aria-hidden", "true");
-      if (!playerScreen.classList.contains("open")) document.body.style.overflow = "";
+      seasonLabel.style.display = "";
+      episodeGrid.style.display = "grid";
+      if (!playerScreen.classList.contains("open")) {
+        document.body.style.overflow = "";
+        if (heroSection.style.display !== "none") heroTrailerCommand("playVideo");
+      }
     }
 
     seasonSelect.addEventListener("change", renderEpisodes);
@@ -5082,7 +5539,7 @@
       if (modalWrap.classList.contains("open")) closeModal();
     });
 
-    async function initialiseShowHub() {
+    async function initialiseTVArchive() {
       migrateWatchHistory();
 
       // Currently Watching is account-only. Old local history remains hidden
@@ -5103,7 +5560,7 @@
       else renderContinueWatching();
     });
 
-    initialiseShowHub();
+    initialiseTVArchive();
   </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-name: Deploy ShowHub Pages
+name: Deploy TV Archive Pages
 
 on:
   push:

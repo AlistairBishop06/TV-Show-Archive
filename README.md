@@ -1,4 +1,4 @@
-# ShowHub
+# TV Archive — GitHub Pages frontend + Vercel API + Neon
 
 ## Architecture
 
@@ -85,3 +85,9 @@ npm run dev
 ```
 
 For local frontend testing, temporarily point `public/config.js` at `http://localhost:3000`.
+
+## Live Sports programme guide
+
+The Live Sports tab includes an on-demand programme guide for the UK Sky Sports channels. Opening **Schedule** fetches today's or tomorrow's listings through the Vercel API and caches the result briefly. The guide route does not query Neon, and the database schema is initialised lazily so opening a sports schedule on its own does not wake the Neon compute.
+
+International Sky Sport streams remain watchable, but a Schedule button is only shown where a reliable guide source has been mapped.

@@ -8,9 +8,11 @@ const skeletonPageType = APP_PAGE === "auth"
   ? "auth"
   : APP_PAGE === "live"
     ? "live"
-    : APP_PAGE === "discover"
+  : APP_PAGE === "discover"
       ? "discover"
-      : (["profile", "search", "collection"].includes(APP_PAGE) ? "utility" : "catalogue");
+      : APP_PAGE === "profile"
+        ? "profile"
+        : (["search", "collection"].includes(APP_PAGE) ? "utility" : "catalogue");
 pageSkeleton.className = `page-skeleton ${skeletonPageType}`;
 pageSkeleton.setAttribute("aria-hidden", "true");
 const skeletonBlocks = (count, className) => Array.from(
@@ -55,6 +57,49 @@ if (skeletonPageType === "live") {
           <div class="skeleton-block skeleton-discover-button"></div>
         </div>
         <div class="skeleton-discover-list">${discoverRows}</div>
+      </div>
+    </div>`;
+} else if (skeletonPageType === "profile") {
+  const profileStats = Array.from({ length: 4 }, () => `
+    <div class="skeleton-profile-stat">
+      <div class="skeleton-block skeleton-profile-stat-value"></div>
+      <div class="skeleton-block skeleton-profile-stat-label"></div>
+    </div>`).join("");
+  const profileHistoryRows = Array.from({ length: 3 }, () => `
+    <div class="skeleton-profile-history-row">
+      <div class="skeleton-block skeleton-profile-poster"></div>
+      <div class="skeleton-profile-history-copy">
+        <div class="skeleton-block skeleton-profile-history-title"></div>
+        <div class="skeleton-block skeleton-profile-history-meta"></div>
+      </div>
+    </div>`).join("");
+  pageSkeleton.innerHTML = `
+    <div class="skeleton-main skeleton-profile-main">
+      <div class="skeleton-block skeleton-profile-back"></div>
+      <div class="skeleton-eyebrow skeleton-block"></div>
+      <div class="skeleton-block skeleton-profile-title"></div>
+      <div class="skeleton-block skeleton-copy-line"></div>
+      <div class="skeleton-profile-tabs">
+        ${[82, 105, 88, 78].map(width => `<div class="skeleton-block skeleton-profile-tab" style="width:${width}px"></div>`).join("")}
+      </div>
+      <div class="skeleton-profile-identity">
+        <div class="skeleton-block skeleton-profile-avatar"></div>
+        <div class="skeleton-profile-identity-copy">
+          <div class="skeleton-block skeleton-profile-kicker"></div>
+          <div class="skeleton-block skeleton-profile-name"></div>
+          <div class="skeleton-block skeleton-profile-email"></div>
+        </div>
+      </div>
+      <div class="skeleton-profile-stats">${profileStats}</div>
+      <div class="skeleton-profile-history">
+        <div class="skeleton-profile-history-head">
+          <div>
+            <div class="skeleton-block skeleton-profile-section-title"></div>
+            <div class="skeleton-block skeleton-profile-section-copy"></div>
+          </div>
+          <div class="skeleton-block skeleton-profile-action"></div>
+        </div>
+        <div class="skeleton-profile-history-list">${profileHistoryRows}</div>
       </div>
     </div>`;
 } else {

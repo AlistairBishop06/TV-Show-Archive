@@ -2821,7 +2821,9 @@
     <section id="liveSportsSection" class="live-sports-section" style="display:none">
       <div class="live-sports-heading">
         <div>
+          <div class="eyebrow">Live now</div>
           <h1>Live Sports</h1>
+          <p>Watch Sky Sports channels live without leaving TV Archive.</p>
         </div>
       </div>
       <div id="liveSportsContent"></div>
@@ -3082,6 +3084,11 @@
       authMode: "signin",
       accountSyncState: "idle"
     };
+
+    // Episode metadata is cached per TVMaze show ID. Keeping it keyed by show
+    // prevents season/episode names from leaking between titles that happen to
+    // share the same S/E numbers.
+    const episodeMetadataCache = new Map();
 
     const el = id => document.getElementById(id);
 
@@ -3557,6 +3564,85 @@
       return Number.isFinite(rating) ? rating : 0;
     }
 
+    function isSameTvShow(a, b) {
+      if (!a || !b) return false;
+
+      const aId = Number(a.id || 0);
+      const bId = Number(b.id || 0);
+      if (aId && bId) return aId === bId;
+
+      const aImdb = getImdbId(a);
+      const bImdb = getImdbId(b);
+      return Boolean(aImdb && bImdb && aImdb === bImdb);
+    }
+
+    function getKnownEpisodesForShow(show) {
+      if (!show) return [];
+
+      if (state.currentEpisodes.length && isSameTvShow(state.currentShow, show)) {
+        return state.currentEpisodes;
+      }
+
+      const showId = Number(show.id || 0);
+      const cached = showId ? episodeMetadataCache.get(showId) : null;
+      return Array.isArray(cached) ? cached : [];
+    }
+
+    function findKnownEpisode(show, season, episode) {
+      season = Number(season);
+      episode = Number(episode);
+      return getKnownEpisodesForShow(show).find(item =>
+        Number(item.season) === season && Number(item.number) === episode
+      ) || null;
+    }
+
+    async function fetchEpisodesForShow(show) {
+      const showId = Number(show?.id || 0);
+      if (!showId) return [];
+
+      const known = getKnownEpisodesForShow(show);
+      if (known.length) {
+        episodeMetadataCache.set(showId, known);
+        return known;
+      }
+
+      const cached = episodeMetadataCache.get(showId);
+      if (cached && typeof cached.then === "function") return cached;
+      if (Array.isArray(cached)) return cached;
+
+      const request = fetchJson(`${TVMAZE_API}/shows/${showId}/episodes`)
+        .then(items => {
+          const episodes = (items || []).filter(item =>
+            Number.isInteger(item.season) && Number.isInteger(item.number)
+          );
+          episodeMetadataCache.set(showId, episodes);
+          return episodes;
+        })
+        .catch(error => {
+          episodeMetadataCache.delete(showId);
+          throw error;
+        });
+
+      episodeMetadataCache.set(showId, request);
+      return request;
+    }
+
+    async function resolveEpisodeData(show, season, episode) {
+      const known = findKnownEpisode(show, season, episode);
+      if (known) return known;
+
+      try {
+        const episodes = await fetchEpisodesForShow(show);
+        return episodes.find(item =>
+          Number(item.season) === Number(season) &&
+          Number(item.number) === Number(episode)
+        ) || null;
+      } catch (error) {
+        console.warn("Could not resolve episode metadata.", error);
+        return null;
+      }
+    }
+
     function getSavedPlayback(imdbId) {
       return getWatchHistory().find(entry => entry.imdbId === imdbId);
     }
@@ -3566,10 +3652,12 @@
       const season = mediaType === "tv" ? Number(options.season) : null;
       const episode = mediaType === "tv" ? Number(options.episode) : null;
       const episodeData = mediaType === "tv"
-        ? state.currentEpisodes.find(item =>
-            Number(item.season) === season && Number(item.number) === episode
-          )
+        ? findKnownEpisode(media, season, episode)
         : null;
+      const existingMatchesEpisode = mediaType === "tv" &&
+        existing?.mediaType !== "movie" &&
+        Number(existing?.season) === season &&
+        Number(existing?.episode) === episode;
 
       return {
         mediaType,
@@ -3582,7 +3670,10 @@
         year: getMediaYear(media) || existing?.year || "",
         season,
         episode,
-        episodeName: episodeData?.name || existing?.episodeName || "",
+        episodeName: mediaType === "tv"
+          ? (options.episodeName || episodeData?.name ||
+              (existingMatchesEpisode ? existing?.episodeName : "") || "")
+          : "",
         currentTime: Number(existing?.currentTime) || 0,
         duration: Number(existing?.duration) || 0,
         lastWatched: Date.now()
@@ -3668,6 +3759,42 @@
       }
     }
 
+    async function refreshContinueEpisodeNames(history) {
+      const tvEntries = (history || []).filter(entry =>
+        entry?.mediaType !== "movie" && Number(entry?.showId) &&
+        Number(entry?.season) > 0 && Number(entry?.episode) > 0
+      );
+      if (!tvEntries.length || !state.user) return;
+
+      const corrections = new Map();
+      await Promise.all(tvEntries.map(async entry => {
+        const show = {
+          id: Number(entry.showId),
+          externals: { imdb: entry.imdbId },
+          name: entry.name
+        };
+        const episodeData = await resolveEpisodeData(show, entry.season, entry.episode);
+        const correctName = String(episodeData?.name || "").trim();
+        if (correctName && correctName !== String(entry.episodeName || "").trim()) {
+          corrections.set(entry.imdbId, correctName);
+        }
+      }));
+
+      if (!corrections.size || !state.user) return;
+
+      let changed = false;
+      state.watchHistory = state.watchHistory.map(entry => {
+        const correctName = corrections.get(entry.imdbId);
+        if (!correctName) return entry;
+        changed = true;
+        return { ...entry, episodeName: correctName };
+      });
+
+      // This is a display/data repair only. Do not wake Neon just to correct an
+      // old label; the corrected name will sync at the next normal checkpoint.
+      if (changed) renderContinueWatching();
+    }
+
     function renderContinueWatching() {
       const history = getWatchHistory()
         .sort((a, b) => (b.lastWatched || 0) - (a.lastWatched || 0))
@@ -3725,6 +3852,8 @@
           </article>
         `;
       }).join("");
+
+      void refreshContinueEpisodeNames(history);
 
       continueRow.querySelectorAll(".continue-remove").forEach(button => {
         button.addEventListener("click", event => {
@@ -4045,7 +4174,7 @@
       const topRatedFull = [...scoped].sort((a, b) => getMediaRating(b) - getMediaRating(a));
       renderRow(
         rowsContainer,
-        "Popular on IMDB",
+        "Popular on TV Archive",
         topRatedFull.slice(0, MAX_ITEMS_PER_ROW),
         topRatedFull,
         { kind: "popular", scope: state.typeScope }
@@ -4056,7 +4185,7 @@
         if (moviesFull.length) {
           renderRow(
             rowsContainer,
-            "Top Rated Movies",
+            "Trending Movies",
             moviesFull.slice(0, MAX_ITEMS_PER_ROW),
             moviesFull,
             { kind: "movies", scope: "movie" }
@@ -4067,7 +4196,7 @@
         if (showsFull.length) {
           renderRow(
             rowsContainer,
-            "Top Rated TV Shows",
+            "Trending TV Shows",
             showsFull.slice(0, MAX_ITEMS_PER_ROW),
             showsFull,
             { kind: "tv", scope: "tv" }
@@ -5004,9 +5133,7 @@
       state.lastProgressWrite = 0;
       state.pendingEpisodeAdvance = false;
 
-      const episodeData = state.currentEpisodes.find(item =>
-        Number(item.season) === season && Number(item.number) === episode
-      );
+      const episodeData = findKnownEpisode(active.media, season, episode);
       const episodeName = episodeData?.name || "";
 
       playerTitle.textContent = getMediaName(active.media);
@@ -5024,6 +5151,29 @@
       entry.duration = 0;
       entry.lastWatched = Date.now();
       saveWatchEntry(entry);
+
+      if (!episodeName) {
+        const mediaAtLookup = active.media;
+        void resolveEpisodeData(mediaAtLookup, season, episode).then(resolved => {
+          const resolvedName = String(resolved?.name || "").trim();
+          const current = state.activePlayback;
+          if (!resolvedName || !current || current.mediaType !== "tv" ||
+              !isSameTvShow(current.media, mediaAtLookup) ||
+              Number(current.season) !== season || Number(current.episode) !== episode) {
+            return;
+          }
+
+          playerSubtitle.textContent = `Season ${season} · Episode ${episode} · ${resolvedName}`;
+          const saved = getSavedPlayback(getImdbId(mediaAtLookup));
+          if (saved && Number(saved.season) === season && Number(saved.episode) === episode &&
+              saved.episodeName !== resolvedName) {
+            setWatchHistory(getWatchHistory().map(item =>
+              item.imdbId === saved.imdbId ? { ...item, episodeName: resolvedName } : item
+            ));
+            renderContinueWatching();
+          }
+        });
+      }
 
       const imdbId = getImdbId(active.media);
       if (imdbId && location.hash.startsWith("#watch=")) {
@@ -5050,17 +5200,13 @@
       let episodes = [];
       const showId = Number(active.media?.id || 0);
 
-      if (state.currentEpisodes.length &&
-          (!state.currentShow?.id || Number(state.currentShow.id) === showId)) {
+      if (state.currentEpisodes.length && isSameTvShow(state.currentShow, active.media)) {
         episodes = state.currentEpisodes;
       }
 
       if (!episodes.length && showId) {
         try {
-          const fetched = await fetchJson(`${TVMAZE_API}/shows/${showId}/episodes`);
-          episodes = fetched.filter(item =>
-            Number.isInteger(item.season) && Number.isInteger(item.number)
-          );
+          episodes = await fetchEpisodesForShow(active.media);
 
           // Keep the episode names available for the player heading and history card.
           state.currentShow = active.media;
@@ -5120,17 +5266,23 @@
         : isSameEpisode ? Number(existing?.currentTime) || 0 : 0;
 
       try {
-        const playbackUrl = await getPlaybackUrl(show, {
-          mediaType: "tv",
-          season: Number(season),
-          episode: Number(episode),
-          startAt
-        });
+        const [playbackUrl, episodeData] = await Promise.all([
+          getPlaybackUrl(show, {
+            mediaType: "tv",
+            season: Number(season),
+            episode: Number(episode),
+            startAt
+          }),
+          resolveEpisodeData(show, season, episode)
+        ]);
+        const episodeName = String(episodeData?.name ||
+          (isSameEpisode ? existing?.episodeName : "") || "").trim();
 
         const watchEntry = makeWatchEntry(show, {
           mediaType: "tv",
           season: Number(season),
-          episode: Number(episode)
+          episode: Number(episode),
+          episodeName
         }, isSameEpisode ? existing : null);
         watchEntry.lastWatched = Date.now();
         saveWatchEntry(watchEntry);
@@ -5139,6 +5291,7 @@
           show,
           playbackUrl,
           `Season ${season} · Episode ${episode}` +
+            (episodeName ? ` · ${episodeName}` : "") +
             (startAt >= 5 ? ` · Resuming at ${formatWatchTime(startAt)}` : ""),
           { mediaType: "tv", season: Number(season), episode: Number(episode) }
         );
@@ -5305,6 +5458,9 @@
         state.currentEpisodes = episodes.filter(episode =>
           Number.isInteger(episode.season) && Number.isInteger(episode.number)
         );
+        if (Number(show.id || 0)) {
+          episodeMetadataCache.set(Number(show.id), state.currentEpisodes);
+        }
 
         const seasons = [...new Set(state.currentEpisodes.map(episode => episode.season))]
           .sort((a, b) => a - b);

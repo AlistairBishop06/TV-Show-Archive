@@ -290,6 +290,17 @@ const episodeGrid = el("episodeGrid");
 const continueButton = el("continueButton");
 const playerScreen = el("playerScreen");
 const playerFrame = el("playerFrame");
+const playerFrameWrap = playerFrame?.parentElement;
+const nativePlayer = document.createElement("video");
+nativePlayer.id = "nativePlayer";
+nativePlayer.className = "player-frame native-player";
+nativePlayer.controls = true;
+nativePlayer.playsInline = true;
+nativePlayer.preload = "auto";
+nativePlayer.style.display = "none";
+playerFrameWrap?.appendChild(nativePlayer);
+let nativeHls = null;
+let hlsLoaderPromise = null;
 const playerTitle = el("playerTitle");
 const playerSubtitle = el("playerSubtitle");
 const loadMoreButton = el("loadMoreButton");
@@ -1796,6 +1807,12 @@ function isVidFastOrigin(origin) {
   } catch {
     return false;
   }
+}
+
+function getVidFastMessageFromEvent(event) {
+  if (event.source !== playerFrame.contentWindow) return null;
+  if (!isVidFastOrigin(event.origin)) return null;
+  return event.data;
 }
 
 async function refreshContinueEpisodeNames(history) {
@@ -3305,10 +3322,11 @@ function openLiveSportsChannel(channel) {
   playerSubtitle.textContent = `Live · ${channel.region}`;
   document.title = `${channel.name} | TV Archive`;
 
-  // Only live-sports embeds are sandboxed. The movie/TV provider detects
-  // sandboxed frames and refuses playback, so those launches explicitly
-  // remove this attribute in launchPlayer(). This live-stream sandbox keeps
-  // scripts/video working while withholding popup/top-navigation privileges.
+  // Live Sports tolerates sandboxing, so keep popup/top-navigation privileges
+  // disabled here. Movie/TV playback uses a direct unsandboxed VidFast iframe.
+  destroyNativePlayer();
+  playerFrame.style.display = "block";
+  playerFrame.removeAttribute("srcdoc");
   playerFrame.setAttribute(
     "sandbox",
     "allow-scripts allow-same-origin allow-forms allow-presentation"
@@ -3345,10 +3363,83 @@ async function getPlaybackUrl(media, { mediaType, season = null, episode = null,
   }
   const data = await apiFetch(`/api/playback-url?${params.toString()}`);
   if (!data?.url) throw new Error("Playback URL was not available.");
-  return data.url;
+  return data;
 }
 
-function launchPlayer(media, url, subtitle, playbackState) {
+function loadHlsLibrary() {
+  if (window.Hls) return Promise.resolve(window.Hls);
+  if (hlsLoaderPromise) return hlsLoaderPromise;
+  hlsLoaderPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/hls.js@1.6.17/dist/hls.min.js";
+    script.async = true;
+    script.onload = () => window.Hls ? resolve(window.Hls) : reject(new Error("HLS player did not initialise."));
+    script.onerror = () => reject(new Error("Could not load the HLS player."));
+    document.head.appendChild(script);
+  }).catch(error => {
+    hlsLoaderPromise = null;
+    throw error;
+  });
+  return hlsLoaderPromise;
+}
+
+function destroyNativePlayer() {
+  if (nativeHls) {
+    try { nativeHls.destroy(); } catch {}
+    nativeHls = null;
+  }
+  try { nativePlayer.pause(); } catch {}
+  nativePlayer.removeAttribute("src");
+  nativePlayer.load();
+  nativePlayer.style.display = "none";
+}
+
+async function startNativePlayer(playback, startAt = 0) {
+  destroyNativePlayer();
+  playerFrame.style.display = "none";
+  nativePlayer.style.display = "block";
+  let fallbackTriggered = false;
+  const useEmbedFallback = () => {
+    if (fallbackTriggered || !playback?.fallbackUrl) return;
+    fallbackTriggered = true;
+    console.warn("Resolved stream failed during playback; switching to VidFast embed fallback.");
+    destroyNativePlayer();
+    playerFrame.style.display = "block";
+    playerFrame.src = playback.fallbackUrl;
+  };
+
+  const applyStartPosition = () => {
+    const target = Math.max(0, Number(startAt) || 0);
+    if (target >= 1) {
+      try { nativePlayer.currentTime = target; } catch {}
+    }
+  };
+  nativePlayer.addEventListener("loadedmetadata", applyStartPosition, { once: true });
+
+  const url = playback.url;
+  const looksHls = playback.kind === "hls" || /\.m3u8(?:$|\?)/i.test(url);
+  if (looksHls && nativePlayer.canPlayType("application/vnd.apple.mpegurl")) {
+    nativePlayer.src = url;
+  } else if (looksHls) {
+    const Hls = await loadHlsLibrary();
+    if (!Hls.isSupported()) throw new Error("This browser cannot play the resolved HLS stream.");
+    nativeHls = new Hls({ enableWorker: true, lowLatencyMode: false });
+    nativeHls.on(Hls.Events.ERROR, (_event, data) => {
+      if (data?.fatal) useEmbedFallback();
+    });
+    nativeHls.loadSource(url);
+    nativeHls.attachMedia(nativePlayer);
+  } else {
+    nativePlayer.src = url;
+  }
+
+  nativePlayer.addEventListener("error", useEmbedFallback, { once: true });
+  try { await nativePlayer.play(); } catch {
+    // Browser autoplay policies can still require the user to press Play.
+  }
+}
+
+async function launchPlayer(media, playback, subtitle, playbackState) {
   heroTrailerCommand("pauseVideo");
   state.activePlayback = { media, ...playbackState };
   state.lastProgressWrite = 0;
@@ -3363,13 +3454,32 @@ function launchPlayer(media, url, subtitle, playbackState) {
     document.title = `${getMediaName(media)} | TV Archive`;
   }
 
-  // Movies and TV must not be sandboxed: the playback provider rejects
-  // sandboxed embeds ("Please Disable Sandbox").
   playerFrame.removeAttribute("sandbox");
-  playerFrame.src = url;
+  playerFrame.removeAttribute("srcdoc");
   playerScreen.classList.add("open");
   playerScreen.setAttribute("aria-hidden", "false");
   document.body.style.overflow = "hidden";
+
+  if (playback?.mode === "direct") {
+    playerFrame.removeAttribute("src");
+    try {
+      await startNativePlayer(playback, playback.startAt || 0);
+      return;
+    } catch (error) {
+      console.warn("Direct stream playback failed; using VidFast embed fallback.", error);
+      destroyNativePlayer();
+      if (playback.fallbackUrl) {
+        playerFrame.style.display = "block";
+        playerFrame.src = playback.fallbackUrl;
+        return;
+      }
+      throw error;
+    }
+  }
+
+  destroyNativePlayer();
+  playerFrame.style.display = "block";
+  playerFrame.src = playback?.url || playback;
 }
 
 function getEpisodeFromPlayerMessage(message) {
@@ -3574,7 +3684,7 @@ async function openEpisode(show, season, episode, options = {}) {
     watchEntry.lastWatched = Date.now();
     saveWatchEntry(watchEntry);
 
-    launchPlayer(
+    await launchPlayer(
       show,
       playbackUrl,
       `Season ${season} · Episode ${episode}` +
@@ -3748,7 +3858,7 @@ async function openMovie(movie, options = {}) {
     watchEntry.lastWatched = Date.now();
     saveWatchEntry(watchEntry);
 
-    launchPlayer(
+    await launchPlayer(
       movie,
       playbackUrl,
       "Movie" + (startAt >= 5 ? ` · Resuming at ${formatWatchTime(startAt)}` : ""),
@@ -3773,12 +3883,15 @@ async function openMovie(movie, options = {}) {
 }
 
 function stopPlayerFrame() {
+  destroyNativePlayer();
+  playerFrame.style.display = "block";
   // Removing the iframe destroys its browsing context immediately, which is
   // more reliable than merely hiding it or assigning an empty src. Reinsert
   // the same element so it is ready for the next launch.
   const frameWrap = playerFrame.parentElement;
   playerFrame.remove();
   playerFrame.removeAttribute("src");
+  playerFrame.removeAttribute("srcdoc");
   if (frameWrap) frameWrap.appendChild(playerFrame);
 }
 
@@ -4016,11 +4129,29 @@ modalWrap.addEventListener("click", event => {
   if (event.target === modalWrap) closeModal();
 });
 
-window.addEventListener("message", event => {
-  if (!isVidFastOrigin(event.origin)) return;
-  if (event.source !== playerFrame.contentWindow) return;
+nativePlayer.addEventListener("timeupdate", () => {
+  if (!state.activePlayback || nativePlayer.style.display === "none") return;
+  updatePlaybackProgress(nativePlayer.currentTime, nativePlayer.duration, "timeupdate");
+});
 
-  let message = event.data;
+nativePlayer.addEventListener("pause", () => {
+  if (!state.activePlayback || nativePlayer.style.display === "none" || nativePlayer.ended) return;
+  updatePlaybackProgress(nativePlayer.currentTime, nativePlayer.duration, "pause");
+});
+
+nativePlayer.addEventListener("seeked", () => {
+  if (!state.activePlayback || nativePlayer.style.display === "none") return;
+  updatePlaybackProgress(nativePlayer.currentTime, nativePlayer.duration, "seeked");
+});
+
+nativePlayer.addEventListener("ended", () => {
+  if (!state.activePlayback || nativePlayer.style.display === "none") return;
+  updatePlaybackProgress(nativePlayer.currentTime, nativePlayer.duration, "ended");
+});
+
+window.addEventListener("message", event => {
+  let message = getVidFastMessageFromEvent(event);
+  if (message === null || message === undefined) return;
   if (typeof message === "string") {
     try {
       message = JSON.parse(message);

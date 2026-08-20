@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { promisify } from "node:util";
+import { Readable } from "node:stream";
 import express from "express";
 import { neon } from "@neondatabase/serverless";
 
@@ -20,6 +21,13 @@ const app = express();
 const authAttempts = new Map();
 const liveSportsScheduleCache = new Map();
 const LIVE_SPORTS_SCHEDULE_CACHE_MS = 10 * 60 * 1000;
+const vidFastResolveCache = new Map();
+const VIDFAST_RESOLVE_CACHE_MS = 10 * 60 * 1000;
+const VIDFAST_ORIGIN = "https://vidfast.vc";
+const VIDFAST_REFERER = `${VIDFAST_ORIGIN}/`;
+const VIDFAST_ENCDEC_API = "https://enc-dec.app/api";
+const VIDFAST_VERSION = "1";
+const VIDFAST_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36";
 const SKY_SPORTS_GUIDE_SIDS = new Map([
   [35, 3096],  // Sky Sports Football
   [36, 3097],  // Sky Sports+
@@ -958,7 +966,279 @@ app.delete("/api/lists/:listId/items/:imdbId", requireAuth, async (req, res, nex
   } catch (error) { next(error); }
 });
 
-app.get("/api/playback-url", requireAuth, (req, res) => {
+
+function vidFastHeaders(token = "") {
+  const headers = {
+    "User-Agent": VIDFAST_USER_AGENT,
+    "Referer": VIDFAST_REFERER,
+    "X-Requested-With": "XMLHttpRequest"
+  };
+  if (token) headers["X-CSRF-Token"] = token;
+  return headers;
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
+  return fetch(url, {
+    ...options,
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+}
+
+async function readResponseText(response, label) {
+  if (!response.ok) {
+    throw new Error(`${label} returned HTTP ${response.status}.`);
+  }
+  return response.text();
+}
+
+async function readResponseJson(response, label) {
+  if (!response.ok) {
+    throw new Error(`${label} returned HTTP ${response.status}.`);
+  }
+  const data = await response.json();
+  if (!data || typeof data !== "object") throw new Error(`${label} returned invalid JSON.`);
+  return data;
+}
+
+function normaliseCandidateUrl(value) {
+  let text = String(value || "").trim();
+  if (!text) return "";
+  text = text.replace(/\\u0026/gi, "&").replace(/\\\//g, "/");
+  if (!/^https?:\/\//i.test(text)) return "";
+  try {
+    const url = new URL(text);
+    if (!/^https?:$/.test(url.protocol)) return "";
+    return url.href;
+  } catch {
+    return "";
+  }
+}
+
+function collectPlayableUrls(value, output = [], seen = new Set(), keyHint = "") {
+  if (value === null || value === undefined || output.length > 80) return output;
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+        (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+      try {
+        collectPlayableUrls(JSON.parse(trimmed), output, seen, keyHint);
+      } catch {}
+    }
+    const url = normaliseCandidateUrl(value);
+    if (!url || seen.has(url)) return output;
+    const lower = url.toLowerCase();
+    const hint = String(keyHint || "").toLowerCase();
+    const looksSubtitle = /\.(vtt|srt|ass)(?:$|\?)/i.test(lower) || /subtitle|caption|track/.test(hint);
+    if (!looksSubtitle) {
+      seen.add(url);
+      output.push({
+        url,
+        score: /\.m3u8(?:$|\?)/i.test(lower) ? 100
+          : /\.mp4(?:$|\?)/i.test(lower) ? 90
+          : /stream|source|file|url|src/.test(hint) ? 55
+          : 20
+      });
+    }
+    return output;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) collectPlayableUrls(item, output, seen, keyHint);
+    return output;
+  }
+
+  if (typeof value === "object") {
+    for (const [key, item] of Object.entries(value)) {
+      collectPlayableUrls(item, output, seen, key);
+    }
+  }
+  return output;
+}
+
+function bestPlayableUrl(value) {
+  const candidates = collectPlayableUrls(value)
+    .sort((a, b) => b.score - a.score);
+  return candidates[0]?.url || "";
+}
+
+function extractVidFastEncryptedText(html) {
+  const patterns = [
+    /\\"en\\":\\"(.*?)\\"/s,
+    /"en"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/s
+  ];
+  for (const pattern of patterns) {
+    const match = String(html || "").match(pattern);
+    if (match?.[1]) return match[1];
+  }
+  return "";
+}
+
+async function decryptVidFastPayload(text) {
+  const response = await fetchWithTimeout(`${VIDFAST_ENCDEC_API}/dec-vidfast`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, version: VIDFAST_VERSION })
+  });
+  return readResponseJson(response, "VidFast decrypt service");
+}
+
+async function resolveVidFastStream({ mediaType, imdbId, season, episode }) {
+  const cacheKey = mediaType === "movie"
+    ? `movie:${imdbId}`
+    : `tv:${imdbId}:${season}:${episode}`;
+  const cached = vidFastResolveCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  const pageUrl = mediaType === "movie"
+    ? `${VIDFAST_ORIGIN}/movie/${encodeURIComponent(imdbId)}`
+    : `${VIDFAST_ORIGIN}/tv/${encodeURIComponent(imdbId)}/${season}/${episode}`;
+
+  const pageResponse = await fetchWithTimeout(pageUrl, { headers: vidFastHeaders() });
+  const html = await readResponseText(pageResponse, "VidFast player page");
+  const encryptedText = extractVidFastEncryptedText(html);
+  if (!encryptedText) throw new Error("VidFast server metadata could not be located.");
+
+  const encUrl = new URL(`${VIDFAST_ENCDEC_API}/enc-vidfast`);
+  encUrl.searchParams.set("text", encryptedText);
+  encUrl.searchParams.set("version", VIDFAST_VERSION);
+  const partsResponse = await fetchWithTimeout(encUrl, { headers: { "User-Agent": VIDFAST_USER_AGENT } });
+  const partsJson = await readResponseJson(partsResponse, "VidFast metadata service");
+  const parts = partsJson.result;
+  if (!parts?.servers || !parts?.stream || !parts?.token) {
+    throw new Error("VidFast metadata response was incomplete.");
+  }
+
+  const headers = vidFastHeaders(parts.token);
+  const serverResponse = await fetchWithTimeout(parts.servers, { method: "POST", headers });
+  const encryptedServers = await readResponseText(serverResponse, "VidFast server list");
+  const decryptedServersJson = await decryptVidFastPayload(encryptedServers);
+  const servers = Array.isArray(decryptedServersJson.result)
+    ? decryptedServersJson.result
+    : Array.isArray(decryptedServersJson)
+      ? decryptedServersJson
+      : [];
+  if (!servers.length) throw new Error("VidFast returned no streaming servers.");
+
+  let lastError = null;
+  for (const server of servers.slice(0, 8)) {
+    const data = server?.data;
+    if (!data) continue;
+    try {
+      const streamUrl = `${String(parts.stream).replace(/\/$/, "")}/${String(data)}`;
+      const streamResponse = await fetchWithTimeout(streamUrl, { method: "POST", headers });
+      const encryptedStream = await readResponseText(streamResponse, "VidFast stream endpoint");
+      const decryptedStream = await decryptVidFastPayload(encryptedStream);
+      const playableUrl = bestPlayableUrl(decryptedStream.result ?? decryptedStream);
+      if (!playableUrl) continue;
+
+      const value = {
+        url: playableUrl,
+        referer: VIDFAST_REFERER,
+        kind: /\.mp4(?:$|\?)/i.test(playableUrl) ? "file" : "hls"
+      };
+      vidFastResolveCache.set(cacheKey, {
+        value,
+        expiresAt: Date.now() + VIDFAST_RESOLVE_CACHE_MS
+      });
+      return value;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("VidFast returned no playable stream URL.");
+}
+
+function mediaProxySignature(payload) {
+  return crypto.createHmac("sha256", DATABASE_URL).update(payload).digest("base64url");
+}
+
+function makeMediaProxyUrl(req, upstreamUrl, referer = VIDFAST_REFERER) {
+  const payload = Buffer.from(JSON.stringify({ url: upstreamUrl, referer }), "utf8").toString("base64url");
+  const signature = mediaProxySignature(payload);
+  return `${req.protocol}://${req.get("host")}/api/vidfast/media?p=${encodeURIComponent(payload)}&s=${encodeURIComponent(signature)}`;
+}
+
+function decodeMediaProxyPayload(payload, signature) {
+  if (!payload || !signature) return null;
+  const expected = mediaProxySignature(payload);
+  const actualBuffer = Buffer.from(String(signature));
+  const expectedBuffer = Buffer.from(expected);
+  if (actualBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(actualBuffer, expectedBuffer)) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    const url = new URL(decoded.url);
+    if (!/^https?:$/.test(url.protocol)) return null;
+    return { url: url.href, referer: cleanText(decoded.referer, 2000) || VIDFAST_REFERER };
+  } catch {
+    return null;
+  }
+}
+
+function rewriteHlsManifest(text, upstreamUrl, req, referer) {
+  const rewrite = value => {
+    try {
+      const absolute = new URL(value, upstreamUrl).href;
+      return makeMediaProxyUrl(req, absolute, referer);
+    } catch {
+      return value;
+    }
+  };
+
+  return String(text || "").split(/\r?\n/).map(line => {
+    if (!line.trim()) return line;
+    if (line.startsWith("#")) {
+      return line.replace(/URI="([^"]+)"/g, (_match, uri) => `URI="${rewrite(uri)}"`);
+    }
+    return rewrite(line.trim());
+  }).join("\n");
+}
+
+app.get("/api/vidfast/media", async (req, res, next) => {
+  try {
+    const decoded = decodeMediaProxyPayload(String(req.query.p || ""), String(req.query.s || ""));
+    if (!decoded) return res.status(403).json({ error: "Invalid media proxy token." });
+
+    const headers = {
+      "User-Agent": VIDFAST_USER_AGENT,
+      "Referer": decoded.referer,
+      "Origin": VIDFAST_ORIGIN,
+      "Accept": req.get("accept") || "*/*"
+    };
+    const range = req.get("range");
+    if (range) headers.Range = range;
+
+    const upstream = await fetchWithTimeout(decoded.url, { headers }, 20000);
+    if (!upstream.ok && upstream.status !== 206) {
+      return res.status(upstream.status).end();
+    }
+
+    const contentType = String(upstream.headers.get("content-type") || "");
+    const isManifest = /mpegurl|m3u8/i.test(contentType) || /\.m3u8(?:$|\?)/i.test(decoded.url);
+
+    if (isManifest) {
+      const manifest = await upstream.text();
+      res.status(upstream.status);
+      res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+      res.setHeader("Cache-Control", "private, max-age=5");
+      return res.send(rewriteHlsManifest(manifest, decoded.url, req, decoded.referer));
+    }
+
+    res.status(upstream.status);
+    for (const headerName of ["content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified"]) {
+      const value = upstream.headers.get(headerName);
+      if (value) res.setHeader(headerName, value);
+    }
+    res.setHeader("Cache-Control", "private, max-age=300");
+    if (!upstream.body) return res.end();
+    Readable.fromWeb(upstream.body).pipe(res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/playback-url", requireAuth, async (req, res) => {
   const mediaType = req.query.type === "movie" ? "movie" : "tv";
   const imdbId = cleanText(req.query.imdbId, 64);
   const startAt = Math.max(0, Math.floor(finiteNumber(req.query.startAt, 0)));
@@ -967,24 +1247,31 @@ app.get("/api/playback-url", requireAuth, (req, res) => {
     return res.status(400).json({ error: "Invalid IMDb identifier." });
   }
 
-  const params = new URLSearchParams({ autoPlay: "true" });
-  if (startAt >= 5) params.set("startAt", String(startAt));
-
-  if (mediaType === "movie") {
-    return res.json({
-      url: `https://vidfast.vc/movie/${encodeURIComponent(imdbId)}?${params.toString()}`
-    });
-  }
-
-  const season = nullableInteger(req.query.season);
-  const episode = nullableInteger(req.query.episode);
-  if (!season || season < 1 || !episode || episode < 1) {
+  const season = mediaType === "tv" ? nullableInteger(req.query.season) : null;
+  const episode = mediaType === "tv" ? nullableInteger(req.query.episode) : null;
+  if (mediaType === "tv" && (!season || season < 1 || !episode || episode < 1)) {
     return res.status(400).json({ error: "A valid season and episode are required." });
   }
 
-  res.json({
-    url: `https://vidfast.vc/tv/${encodeURIComponent(imdbId)}/${season}/${episode}?${params.toString()}`
-  });
+  const params = new URLSearchParams({ autoPlay: "true" });
+  if (startAt >= 5) params.set("startAt", String(startAt));
+  const fallbackUrl = mediaType === "movie"
+    ? `${VIDFAST_ORIGIN}/movie/${encodeURIComponent(imdbId)}?${params.toString()}`
+    : `${VIDFAST_ORIGIN}/tv/${encodeURIComponent(imdbId)}/${season}/${episode}?${params.toString()}`;
+
+  try {
+    const resolved = await resolveVidFastStream({ mediaType, imdbId, season, episode });
+    return res.json({
+      mode: "direct",
+      kind: resolved.kind,
+      url: makeMediaProxyUrl(req, resolved.url, resolved.referer),
+      fallbackUrl,
+      startAt
+    });
+  } catch (error) {
+    console.warn("VidFast direct resolver failed; using embed fallback:", error?.message || error);
+    return res.json({ mode: "embed", url: fallbackUrl, startAt });
+  }
 });
 
 app.get("/api/watch-history", requireAuth, async (req, res, next) => {

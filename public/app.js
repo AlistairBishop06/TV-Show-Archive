@@ -2097,7 +2097,7 @@ function renderRows() {
   const topRatedFull = [...scoped].sort((a, b) => getMediaRating(b) - getMediaRating(a));
   renderRow(
     rowsContainer,
-    "Popular on TV Archive",
+    "Popular on IMDB",
     topRatedFull.slice(0, MAX_ITEMS_PER_ROW),
     topRatedFull,
     { kind: "popular", scope: state.typeScope }
@@ -2108,7 +2108,7 @@ function renderRows() {
     if (moviesFull.length) {
       renderRow(
         rowsContainer,
-        "Trending Movies",
+        "Top Rated Movies",
         moviesFull.slice(0, MAX_ITEMS_PER_ROW),
         moviesFull,
         { kind: "movies", scope: "movie" }
@@ -2119,7 +2119,7 @@ function renderRows() {
     if (showsFull.length) {
       renderRow(
         rowsContainer,
-        "Trending TV Shows",
+        "Top Rated TV Shows",
         showsFull.slice(0, MAX_ITEMS_PER_ROW),
         showsFull,
         { kind: "tv", scope: "tv" }

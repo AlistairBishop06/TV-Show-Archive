@@ -1791,10 +1791,12 @@ function syncActivePlaybackOnExit({ keepalive = false } = {}) {
 function isVidFastOrigin(origin) {
   try {
     const url = new URL(origin);
-    if (url.protocol !== "https:") return false;
-    if (url.hostname === "vidfast.vc" || url.hostname.endsWith(".vidfast.vc")) return true;
-    const apiBase = String(window.SHOWHUB_API_BASE || "");
-    return apiBase ? url.origin === new URL(apiBase).origin : false;
+    if (url.protocol === "https:" &&
+        (url.hostname === "vidfast.vc" || url.hostname.endsWith(".vidfast.vc"))) {
+      return true;
+    }
+    const apiBase = String(window.SHOWHUB_API_BASE || "").replace(/\/+$/, "");
+    return Boolean(apiBase) && url.origin === new URL(apiBase).origin;
   } catch {
     return false;
   }
@@ -3365,9 +3367,8 @@ function launchPlayer(media, url, subtitle, playbackState) {
     document.title = `${getMediaName(media)} | TV Archive`;
   }
 
-  // Movies and TV remain unsandboxed because VidFast detects browser
-  // sandbox flags. The Vercel playback page filters popup/ad behaviour
-  // inside the proxied document instead.
+  // Movies and TV must not be sandboxed: the playback provider rejects
+  // sandboxed embeds ("Please Disable Sandbox").
   playerFrame.removeAttribute("sandbox");
   playerFrame.src = url;
   playerScreen.classList.add("open");
@@ -4033,11 +4034,6 @@ window.addEventListener("message", event => {
   }
 
   if (!message || typeof message !== "object") return;
-
-  if (message.type === "TV_ARCHIVE_FILTER") {
-    if (message.status === "active") console.info("TV Archive VidFast popup filter active.");
-    return;
-  }
 
   // VidFast may include the current season/episode in PLAYER_EVENT or
   // MEDIA_DATA messages. If it does, treat that as the source of truth.

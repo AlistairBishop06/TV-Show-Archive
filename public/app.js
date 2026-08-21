@@ -1788,12 +1788,13 @@ function syncActivePlaybackOnExit({ keepalive = false } = {}) {
   saveWatchEntry(entry, { syncRemote: true, keepalive });
 }
 
-function isVidkingOrigin(origin) {
+function isVidFastOrigin(origin) {
   try {
     const url = new URL(origin);
-    return url.protocol === "https:" &&
-      (url.hostname === "vidking.net" || url.hostname === "www.vidking.net" ||
-       url.hostname.endsWith(".vidking.net"));
+    if (url.protocol !== "https:") return false;
+    if (url.hostname === "vidfast.vc" || url.hostname.endsWith(".vidfast.vc")) return true;
+    const apiBase = String(window.SHOWHUB_API_BASE || "");
+    return apiBase ? url.origin === new URL(apiBase).origin : false;
   } catch {
     return false;
   }
@@ -3364,13 +3365,10 @@ function launchPlayer(media, url, subtitle, playbackState) {
     document.title = `${getMediaName(media)} | TV Archive`;
   }
 
-  // Vidking is sandboxed so its player can run while popup/pop-under,
-  // new-window and top-level navigation privileges remain unavailable.
-  // Unlike the previous provider, Vidking does not document a sandbox ban.
-  playerFrame.setAttribute(
-    "sandbox",
-    "allow-scripts allow-same-origin allow-forms allow-presentation"
-  );
+  // Movies and TV remain unsandboxed because VidFast detects browser
+  // sandbox flags. The Vercel playback page filters popup/ad behaviour
+  // inside the proxied document instead.
+  playerFrame.removeAttribute("sandbox");
   playerFrame.src = url;
   playerScreen.classList.add("open");
   playerScreen.setAttribute("aria-hidden", "false");
@@ -4022,7 +4020,7 @@ modalWrap.addEventListener("click", event => {
 });
 
 window.addEventListener("message", event => {
-  if (!isVidkingOrigin(event.origin)) return;
+  if (!isVidFastOrigin(event.origin)) return;
   if (event.source !== playerFrame.contentWindow) return;
 
   let message = event.data;
@@ -4036,8 +4034,13 @@ window.addEventListener("message", event => {
 
   if (!message || typeof message !== "object") return;
 
-  // Vidking includes the current season/episode in PLAYER_EVENT data;
-  // if present, treat those values as the source of truth.
+  if (message.type === "TV_ARCHIVE_FILTER") {
+    if (message.status === "active") console.info("TV Archive VidFast popup filter active.");
+    return;
+  }
+
+  // VidFast may include the current season/episode in PLAYER_EVENT or
+  // MEDIA_DATA messages. If it does, treat that as the source of truth.
   const playerEpisode = getEpisodeFromPlayerMessage(message);
   if (playerEpisode && state.activePlayback?.mediaType === "tv") {
     syncActiveTvEpisode(playerEpisode.season, playerEpisode.episode);
@@ -4054,7 +4057,7 @@ window.addEventListener("message", event => {
 
   if (message.type === "PLAYER_EVENT" && eventName === "ended" &&
       state.activePlayback?.mediaType === "tv") {
-    // Save the completed episode first, then wait for Vidking to start the
+    // Save the completed episode first, then wait for VidFast to start the
     // next one. The next play/timeupdate event will move the outer app too.
     if (hasPlaybackTime) {
       updatePlaybackProgress(currentTime, duration, eventName);
@@ -4070,7 +4073,7 @@ window.addEventListener("message", event => {
     Number.isFinite(currentTime) && currentTime >= 0 && currentTime < 60;
 
   if (looksLikeFreshEpisodePlayback) {
-    // If Vidking did not include season/episode metadata, infer the next
+    // If VidFast did not include season/episode metadata, infer the next
     // episode from TVMaze only after the new video actually begins.
     syncToNextEpisodeAfterPlayerAdvance(currentTime, duration, eventName);
     return;

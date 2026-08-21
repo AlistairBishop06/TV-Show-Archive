@@ -958,90 +958,334 @@ app.delete("/api/lists/:listId/items/:imdbId", requireAuth, async (req, res, nex
   } catch (error) { next(error); }
 });
 
-const tmdbIdCache = new Map();
 
-async function resolveTmdbId(imdbId, mediaType, season = null, episode = null) {
-  const cacheKey = `${mediaType}:${imdbId.toLowerCase()}`;
-  const cached = tmdbIdCache.get(cacheKey);
-  if (cached) return cached;
+const VIDFAST_ORIGIN = "https://vidfast.vc";
+const VIDFAST_BLOCKED_HOST_PARTS = [
+  "doubleclick.net", "googlesyndication.com", "googleadservices.com",
+  "popads.net", "popcash.net", "onclickads.net", "onclicka.com",
+  "admaven.com", "ad-maven.com", "propellerads.com", "propeller-tracking.com",
+  "adsterra.com", "exoclick.com", "trafficjunky.net", "juicyads.com",
+  "hilltopads.net", "hilltopads.com", "clickadu.com", "adcash.com",
+  "evadav.com", "richads.com", "zeropark.com", "monetag.com",
+  "monetizer101.com", "cpm-gate.com", "cpmrevenuegate.com", "cpmstar.com",
+  "pushground.com", "adnxs.com", "taboola.com", "outbrain.com", "mgid.com"
+];
+const VIDFAST_BLOCKED_URL_PARTS = [
+  "/popunder", "/popup", "pop-under", "pop_under", "onclickad",
+  "adserver", "adserve", "adclick", "ad-track", "clickunder",
+  "click-under", "interstitial", "redirect.php?", "?zoneid=", "&zoneid="
+];
 
-  const params = new URLSearchParams({ imdb_id: imdbId });
-  if (mediaType === "tv") {
-    params.set("season", String(season));
-    params.set("episode", String(episode));
+function isVidFastUpstreamUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" &&
+      (url.hostname === "vidfast.vc" || url.hostname.endsWith(".vidfast.vc"));
+  } catch {
+    return false;
   }
-
-  const response = await fetch(`https://api.theintrodb.org/v3/media?${params.toString()}`, {
-    headers: {
-      "Accept": "application/json",
-      "User-Agent": "TVArchive/1.0"
-    },
-    signal: AbortSignal.timeout(8000)
-  });
-
-  if (!response.ok) {
-    const error = new Error(`Could not resolve this title for Vidking (${response.status}).`);
-    error.status = 502;
-    throw error;
-  }
-
-  const data = await response.json();
-  const tmdbId = Number(data?.tmdb_id ?? data?.tmdbId);
-  if (!Number.isInteger(tmdbId) || tmdbId < 1) {
-    const error = new Error("No TMDB identifier was available for this title.");
-    error.status = 404;
-    throw error;
-  }
-
-  // Vercel instances are short-lived, so this is just a lightweight hot cache.
-  // It avoids repeated external ID lookups while an instance remains warm and
-  // does not consume Neon storage or compute.
-  if (tmdbIdCache.size > 1000) tmdbIdCache.clear();
-  tmdbIdCache.set(cacheKey, tmdbId);
-  return tmdbId;
 }
 
-app.get("/api/playback-url", requireAuth, async (req, res, next) => {
+function isBlockedVidFastAdUrl(value, base = VIDFAST_ORIGIN) {
+  try {
+    const url = new URL(value, base);
+    const hostname = url.hostname.toLowerCase();
+    const href = url.href.toLowerCase();
+    if (VIDFAST_BLOCKED_HOST_PARTS.some(part => hostname === part || hostname.endsWith(`.${part}`))) return true;
+    return VIDFAST_BLOCKED_URL_PARTS.some(part => href.includes(part));
+  } catch {
+    return false;
+  }
+}
+
+function stripKnownVidFastAdTags(html, upstreamUrl) {
+  // Remove only external scripts/frames that match a conservative ad-network
+  // list. Player/CDN resources are deliberately left alone.
+  return String(html)
+    .replace(/<script\b([^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*)>\s*<\/script\s*>/gi,
+      (full, _attrs, src) => isBlockedVidFastAdUrl(src, upstreamUrl) ? "" : full)
+    .replace(/<iframe\b([^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*)>(?:\s*<\/iframe\s*>)?/gi,
+      (full, _attrs, src) => isBlockedVidFastAdUrl(src, upstreamUrl) ? "" : full)
+    .replace(/<link\b([^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*)>/gi,
+      (full, _attrs, href) => isBlockedVidFastAdUrl(href, upstreamUrl) ? "" : full);
+}
+
+function vidFastAdblockBootstrap(upstreamUrl) {
+  const blockedHosts = JSON.stringify(VIDFAST_BLOCKED_HOST_PARTS);
+  const blockedParts = JSON.stringify(VIDFAST_BLOCKED_URL_PARTS);
+  const upstream = JSON.stringify(upstreamUrl);
+  return `
+<script data-tv-archive-filter="1">
+(() => {
+  "use strict";
+  const BLOCKED_HOSTS = ${blockedHosts};
+  const BLOCKED_PARTS = ${blockedParts};
+  const UPSTREAM = ${upstream};
+  let lastPointerTarget = null;
+  let lastPointerAt = 0;
+
+  const absoluteUrl = value => {
+    try { return new URL(String(value || ""), UPSTREAM); }
+    catch { return null; }
+  };
+  const blockedUrl = value => {
+    const url = absoluteUrl(value);
+    if (!url) return false;
+    const host = url.hostname.toLowerCase();
+    const href = url.href.toLowerCase();
+    if (BLOCKED_HOSTS.some(part => host === part || host.endsWith("." + part))) return true;
+    return BLOCKED_PARTS.some(part => href.includes(part));
+  };
+
+  const fakePopup = new Proxy({}, {
+    get(_target, prop) {
+      if (prop === "closed") return false;
+      if (["close", "focus", "blur", "postMessage", "stop", "print"].includes(String(prop))) return () => undefined;
+      if (prop === "location") return { href: "about:blank", assign() {}, replace() {}, reload() {} };
+      if (prop === "document") return { write() {}, writeln() {}, close() {} };
+      return undefined;
+    },
+    set() { return true; }
+  });
+
+  function neutraliseLikelyClickCatcher(start) {
+    if (!(start instanceof Element)) return;
+    let node = start;
+    for (let depth = 0; node && depth < 5; depth += 1, node = node.parentElement) {
+      const tag = node.tagName;
+      if (["VIDEO", "BUTTON", "INPUT", "SELECT", "TEXTAREA"].includes(tag)) continue;
+      const rect = node.getBoundingClientRect?.();
+      if (!rect || rect.width < innerWidth * .45 || rect.height < innerHeight * .35) continue;
+      if (node.querySelector?.("video")) continue;
+      const style = getComputedStyle(node);
+      const positioned = ["fixed", "absolute", "sticky"].includes(style.position);
+      const z = Number.parseInt(style.zIndex, 10);
+      const suspicious = positioned || (Number.isFinite(z) && z >= 10) || style.cursor === "pointer";
+      if (!suspicious) continue;
+      node.style.setProperty("pointer-events", "none", "important");
+      node.style.setProperty("display", "none", "important");
+      node.dataset.tvArchiveBlockedOverlay = "1";
+      break;
+    }
+  }
+
+  addEventListener("pointerdown", event => {
+    lastPointerTarget = event.target instanceof Element ? event.target : null;
+    lastPointerAt = Date.now();
+  }, true);
+
+  const blockedOpen = function() {
+    if (lastPointerTarget && Date.now() - lastPointerAt < 1500) {
+      queueMicrotask(() => neutraliseLikelyClickCatcher(lastPointerTarget));
+    }
+    return fakePopup;
+  };
+  try { Object.defineProperty(window, "open", { configurable: true, writable: true, value: blockedOpen }); }
+  catch { try { window.open = blockedOpen; } catch {} }
+  try { Object.defineProperty(Window.prototype, "open", { configurable: true, writable: true, value: blockedOpen }); }
+  catch {}
+
+  function stopBadLink(event) {
+    const target = event.target instanceof Element ? event.target : null;
+    const anchor = target?.closest?.("a[href]");
+    if (!anchor) return;
+    const newContext = String(anchor.target || "").toLowerCase() === "_blank";
+    if (!newContext && !blockedUrl(anchor.href)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (newContext || blockedUrl(anchor.href)) neutraliseLikelyClickCatcher(anchor);
+  }
+  document.addEventListener("click", stopBadLink, true);
+  document.addEventListener("auxclick", stopBadLink, true);
+
+  const nativeClick = HTMLElement.prototype.click;
+  HTMLElement.prototype.click = function(...args) {
+    if (this instanceof HTMLAnchorElement && (String(this.target).toLowerCase() === "_blank" || blockedUrl(this.href))) {
+      neutraliseLikelyClickCatcher(this);
+      return;
+    }
+    return nativeClick.apply(this, args);
+  };
+
+  const nativeSetAttribute = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function(name, value) {
+    const lowerName = String(name).toLowerCase();
+    if (this instanceof HTMLAnchorElement && lowerName === "target" && String(value).toLowerCase() === "_blank") {
+      return nativeSetAttribute.call(this, name, "_self");
+    }
+    if (["src", "href", "data"].includes(lowerName) && blockedUrl(value)) return;
+    return nativeSetAttribute.call(this, name, value);
+  };
+
+  const nativeFetch = window.fetch?.bind(window);
+  if (nativeFetch) {
+    window.fetch = function(input, init) {
+      const value = input instanceof Request ? input.url : input;
+      if (blockedUrl(value)) return Promise.resolve(new Response("", { status: 204 }));
+      return nativeFetch(input, init);
+    };
+  }
+
+  const nativeXhrOpen = XMLHttpRequest.prototype.open;
+  const nativeXhrSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    this.__tvArchiveBlocked = blockedUrl(url);
+    if (this.__tvArchiveBlocked) return nativeXhrOpen.call(this, method, "data:text/plain,", ...rest);
+    return nativeXhrOpen.call(this, method, url, ...rest);
+  };
+  XMLHttpRequest.prototype.send = function(...args) {
+    if (this.__tvArchiveBlocked) return nativeXhrSend.call(this, null);
+    return nativeXhrSend.apply(this, args);
+  };
+
+  if (navigator.sendBeacon) {
+    const nativeBeacon = navigator.sendBeacon.bind(navigator);
+    navigator.sendBeacon = (url, data) => blockedUrl(url) ? true : nativeBeacon(url, data);
+  }
+
+  function cleanNode(node) {
+    if (!(node instanceof Element)) return;
+    const candidates = [node, ...node.querySelectorAll?.("script[src],iframe[src],img[src],link[href],a[href]") || []];
+    for (const candidate of candidates) {
+      const url = candidate.getAttribute?.("src") || candidate.getAttribute?.("href") || "";
+      if (url && blockedUrl(url)) candidate.remove();
+      if (candidate instanceof HTMLAnchorElement && String(candidate.target).toLowerCase() === "_blank") candidate.target = "_self";
+    }
+  }
+
+  const nativeAppendChild = Node.prototype.appendChild;
+  Node.prototype.appendChild = function(child) {
+    if (child instanceof Element) {
+      const url = child.getAttribute?.("src") || child.getAttribute?.("href") || "";
+      if (url && blockedUrl(url)) return child;
+      if (child instanceof HTMLAnchorElement && String(child.target).toLowerCase() === "_blank") child.target = "_self";
+    }
+    return nativeAppendChild.call(this, child);
+  };
+
+  const nativeInsertBefore = Node.prototype.insertBefore;
+  Node.prototype.insertBefore = function(child, before) {
+    if (child instanceof Element) {
+      const url = child.getAttribute?.("src") || child.getAttribute?.("href") || "";
+      if (url && blockedUrl(url)) return child;
+    }
+    return nativeInsertBefore.call(this, child, before);
+  };
+
+  const startObserver = () => {
+    cleanNode(document.documentElement);
+    const observer = new MutationObserver(records => {
+      for (const record of records) for (const node of record.addedNodes) cleanNode(node);
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  };
+  if (document.documentElement) startObserver();
+  else document.addEventListener("DOMContentLoaded", startObserver, { once: true });
+
+  try { parent.postMessage({ type: "TV_ARCHIVE_FILTER", status: "active" }, "*"); } catch {}
+})();
+</script>`;
+}
+
+function buildVidFastUrl({ mediaType, imdbId, season = null, episode = null, startAt = 0 }) {
+  const params = new URLSearchParams({ autoPlay: "true" });
+  if (startAt >= 5) params.set("startAt", String(startAt));
+  if (mediaType === "movie") {
+    return `${VIDFAST_ORIGIN}/movie/${encodeURIComponent(imdbId)}?${params.toString()}`;
+  }
+  return `${VIDFAST_ORIGIN}/tv/${encodeURIComponent(imdbId)}/${season}/${episode}?${params.toString()}`;
+}
+
+app.get("/api/vidfast/frame", async (req, res, next) => {
   try {
     const mediaType = req.query.type === "movie" ? "movie" : "tv";
     const imdbId = cleanText(req.query.imdbId, 64);
     const startAt = Math.max(0, Math.floor(finiteNumber(req.query.startAt, 0)));
-
-    if (!/^tt\d+$/i.test(imdbId)) {
-      return res.status(400).json({ error: "Invalid IMDb identifier." });
-    }
+    if (!/^tt\d+$/i.test(imdbId)) return res.status(400).send("Invalid media identifier.");
 
     const season = mediaType === "tv" ? nullableInteger(req.query.season) : null;
     const episode = mediaType === "tv" ? nullableInteger(req.query.episode) : null;
     if (mediaType === "tv" && (!season || season < 1 || !episode || episode < 1)) {
-      return res.status(400).json({ error: "A valid season and episode are required." });
+      return res.status(400).send("A valid season and episode are required.");
     }
 
-    const tmdbId = await resolveTmdbId(imdbId, mediaType, season, episode);
-    const params = new URLSearchParams({
-      color: "ec3538",
-      autoPlay: "true"
+    const upstreamUrl = buildVidFastUrl({ mediaType, imdbId, season, episode, startAt });
+    const upstream = await fetch(upstreamUrl, {
+      redirect: "follow",
+      headers: {
+        Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "en-GB,en;q=0.9",
+        "User-Agent": String(req.get("user-agent") || "Mozilla/5.0 TVArchive/1.0").slice(0, 300)
+      },
+      signal: AbortSignal.timeout(12000)
     });
-    if (startAt >= 5) params.set("progress", String(startAt));
 
-    if (mediaType === "movie") {
-      return res.json({
-        provider: "vidking",
-        tmdbId,
-        url: `https://www.vidking.net/embed/movie/${tmdbId}?${params.toString()}`
-      });
+    if (!upstream.ok || !isVidFastUpstreamUrl(upstream.url)) {
+      const error = new Error(`VidFast player proxy returned HTTP ${upstream.status}.`);
+      error.status = 502;
+      throw error;
     }
 
-    params.set("nextEpisode", "true");
-    params.set("episodeSelector", "true");
-    return res.json({
-      provider: "vidking",
-      tmdbId,
-      url: `https://www.vidking.net/embed/tv/${tmdbId}/${season}/${episode}?${params.toString()}`
-    });
+    const contentType = String(upstream.headers.get("content-type") || "");
+    if (!contentType.includes("text/html")) {
+      const error = new Error("VidFast did not return an HTML player page.");
+      error.status = 502;
+      throw error;
+    }
+
+    let html = await upstream.text();
+    html = stripKnownVidFastAdTags(html, upstream.url);
+    // The proxy document has the Vercel API origin. Point ordinary relative
+    // asset URLs back at VidFast while our bootstrap filters popup/ad behaviour.
+    const baseTag = `<base href="${upstream.url.replace(/"/g, "&quot;")}">`;
+    const injection = `${baseTag}${vidFastAdblockBootstrap(upstream.url)}`;
+    if (/<head\b[^>]*>/i.test(html)) {
+      html = html.replace(/<head\b([^>]*)>/i, match => `${match}${injection}`);
+    } else {
+      html = injection + html;
+    }
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+    res.setHeader("Content-Security-Policy", "frame-ancestors https://alistairbishop06.github.io; form-action 'none'; object-src 'none'");
+    res.send(html);
   } catch (error) {
     next(error);
   }
+});
+
+app.get("/api/playback-url", requireAuth, (req, res) => {
+  const mediaType = req.query.type === "movie" ? "movie" : "tv";
+  const imdbId = cleanText(req.query.imdbId, 64);
+  const startAt = Math.max(0, Math.floor(finiteNumber(req.query.startAt, 0)));
+
+  if (!/^tt\d+$/i.test(imdbId)) {
+    return res.status(400).json({ error: "Invalid IMDb identifier." });
+  }
+
+  const season = mediaType === "tv" ? nullableInteger(req.query.season) : null;
+  const episode = mediaType === "tv" ? nullableInteger(req.query.episode) : null;
+  if (mediaType === "tv" && (!season || season < 1 || !episode || episode < 1)) {
+    return res.status(400).json({ error: "A valid season and episode are required." });
+  }
+
+  const proxyParams = new URLSearchParams({
+    type: mediaType,
+    imdbId,
+    startAt: String(startAt)
+  });
+  if (mediaType === "tv") {
+    proxyParams.set("season", String(season));
+    proxyParams.set("episode", String(episode));
+  }
+
+  // The browser loads this unsandboxed Vercel page, not VidFast directly.
+  // Popup/ad filtering is injected inside that proxied document.
+  const apiOrigin = `${req.protocol}://${req.get("host")}`;
+  res.json({
+    provider: "vidfast-filtered",
+    url: `${apiOrigin}/api/vidfast/frame?${proxyParams.toString()}`
+  });
 });
 
 app.get("/api/watch-history", requireAuth, async (req, res, next) => {

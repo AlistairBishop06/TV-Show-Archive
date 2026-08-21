@@ -958,33 +958,90 @@ app.delete("/api/lists/:listId/items/:imdbId", requireAuth, async (req, res, nex
   } catch (error) { next(error); }
 });
 
-app.get("/api/playback-url", requireAuth, (req, res) => {
-  const mediaType = req.query.type === "movie" ? "movie" : "tv";
-  const imdbId = cleanText(req.query.imdbId, 64);
-  const startAt = Math.max(0, Math.floor(finiteNumber(req.query.startAt, 0)));
+const tmdbIdCache = new Map();
 
-  if (!/^tt\d+$/i.test(imdbId)) {
-    return res.status(400).json({ error: "Invalid IMDb identifier." });
+async function resolveTmdbId(imdbId, mediaType, season = null, episode = null) {
+  const cacheKey = `${mediaType}:${imdbId.toLowerCase()}`;
+  const cached = tmdbIdCache.get(cacheKey);
+  if (cached) return cached;
+
+  const params = new URLSearchParams({ imdb_id: imdbId });
+  if (mediaType === "tv") {
+    params.set("season", String(season));
+    params.set("episode", String(episode));
   }
 
-  const params = new URLSearchParams({ autoPlay: "true" });
-  if (startAt >= 5) params.set("startAt", String(startAt));
-
-  if (mediaType === "movie") {
-    return res.json({
-      url: `https://vidfast.vc/movie/${encodeURIComponent(imdbId)}?${params.toString()}`
-    });
-  }
-
-  const season = nullableInteger(req.query.season);
-  const episode = nullableInteger(req.query.episode);
-  if (!season || season < 1 || !episode || episode < 1) {
-    return res.status(400).json({ error: "A valid season and episode are required." });
-  }
-
-  res.json({
-    url: `https://vidfast.vc/tv/${encodeURIComponent(imdbId)}/${season}/${episode}?${params.toString()}`
+  const response = await fetch(`https://api.theintrodb.org/v3/media?${params.toString()}`, {
+    headers: {
+      "Accept": "application/json",
+      "User-Agent": "TVArchive/1.0"
+    },
+    signal: AbortSignal.timeout(8000)
   });
+
+  if (!response.ok) {
+    const error = new Error(`Could not resolve this title for Vidking (${response.status}).`);
+    error.status = 502;
+    throw error;
+  }
+
+  const data = await response.json();
+  const tmdbId = Number(data?.tmdb_id ?? data?.tmdbId);
+  if (!Number.isInteger(tmdbId) || tmdbId < 1) {
+    const error = new Error("No TMDB identifier was available for this title.");
+    error.status = 404;
+    throw error;
+  }
+
+  // Vercel instances are short-lived, so this is just a lightweight hot cache.
+  // It avoids repeated external ID lookups while an instance remains warm and
+  // does not consume Neon storage or compute.
+  if (tmdbIdCache.size > 1000) tmdbIdCache.clear();
+  tmdbIdCache.set(cacheKey, tmdbId);
+  return tmdbId;
+}
+
+app.get("/api/playback-url", requireAuth, async (req, res, next) => {
+  try {
+    const mediaType = req.query.type === "movie" ? "movie" : "tv";
+    const imdbId = cleanText(req.query.imdbId, 64);
+    const startAt = Math.max(0, Math.floor(finiteNumber(req.query.startAt, 0)));
+
+    if (!/^tt\d+$/i.test(imdbId)) {
+      return res.status(400).json({ error: "Invalid IMDb identifier." });
+    }
+
+    const season = mediaType === "tv" ? nullableInteger(req.query.season) : null;
+    const episode = mediaType === "tv" ? nullableInteger(req.query.episode) : null;
+    if (mediaType === "tv" && (!season || season < 1 || !episode || episode < 1)) {
+      return res.status(400).json({ error: "A valid season and episode are required." });
+    }
+
+    const tmdbId = await resolveTmdbId(imdbId, mediaType, season, episode);
+    const params = new URLSearchParams({
+      color: "ec3538",
+      autoPlay: "true"
+    });
+    if (startAt >= 5) params.set("progress", String(startAt));
+
+    if (mediaType === "movie") {
+      return res.json({
+        provider: "vidking",
+        tmdbId,
+        url: `https://www.vidking.net/embed/movie/${tmdbId}?${params.toString()}`
+      });
+    }
+
+    params.set("nextEpisode", "true");
+    params.set("episodeSelector", "true");
+    return res.json({
+      provider: "vidking",
+      tmdbId,
+      url: `https://www.vidking.net/embed/tv/${tmdbId}/${season}/${episode}?${params.toString()}`
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get("/api/watch-history", requireAuth, async (req, res, next) => {

@@ -875,6 +875,16 @@ select {
   min-width: 0;
 }
 
+.player-warning {
+  display: block;
+  width: clamp(130px, 15vw, 190px);
+  height: auto;
+  max-height: 48px;
+  margin-left: auto;
+  flex: 0 1 auto;
+  object-fit: contain;
+}
+
 .player-title {
   font-weight: 800;
   letter-spacing: -.02em;
@@ -907,6 +917,7 @@ select {
   .app-shell { width: min(100% - 22px, 1500px); }
   .topbar { align-items: stretch; flex-direction: column; gap: 12px; }
   .search { max-width: none; width: 100%; }
+  .player-warning { width: min(112px, 30vw); max-height: 42px; }
   .hero { min-height: 350px; border-radius: 21px; }
   .hero-content { min-height: 350px; padding: 28px 24px; }
   .row-card { flex-basis: 130px; width: 130px; min-width: 130px; }

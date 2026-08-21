@@ -1791,12 +1791,8 @@ function syncActivePlaybackOnExit({ keepalive = false } = {}) {
 function isVidFastOrigin(origin) {
   try {
     const url = new URL(origin);
-    if (url.protocol === "https:" &&
-        (url.hostname === "vidfast.vc" || url.hostname.endsWith(".vidfast.vc"))) {
-      return true;
-    }
-    const apiBase = String(window.SHOWHUB_API_BASE || "").replace(/\/+$/, "");
-    return Boolean(apiBase) && url.origin === new URL(apiBase).origin;
+    return url.protocol === "https:" &&
+      (url.hostname === "vidfast.vc" || url.hostname.endsWith(".vidfast.vc"));
   } catch {
     return false;
   }

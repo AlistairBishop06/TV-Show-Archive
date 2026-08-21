@@ -1337,6 +1337,15 @@ header {
   color: #83848d;
 }
 
+.navbar-warning {
+  display: block;
+  width: clamp(108px, 12vw, 170px);
+  height: auto;
+  max-height: 56px;
+  flex: 0 1 auto;
+  object-fit: contain;
+}
+
 main.app-shell {
   padding-top: 18px;
 }
@@ -1954,6 +1963,10 @@ select:focus {
     width: min(300px, 30vw);
   }
 
+  .navbar-warning {
+    width: clamp(96px, 11vw, 120px);
+  }
+
   .type-nav a,
   .discover-nav-link {
     padding-inline: 10px;
@@ -2033,6 +2046,12 @@ select:focus {
 
   .search input {
     height: 37px;
+  }
+
+  .navbar-warning {
+    order: 3;
+    width: min(170px, 42vw);
+    max-height: 56px;
   }
 
   main.app-shell {

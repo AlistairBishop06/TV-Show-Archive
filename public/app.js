@@ -3157,6 +3157,36 @@ function dlScheduleSearchText(event) {
   ].filter(Boolean).join(" ").toLowerCase();
 }
 
+const DL_SPORT_CATEGORIES = [
+  { key: "football", label: "Football", pattern: /\b(soccer|premier league|championship|league one|league two|national league|champions league|europa|conference league|bundesliga|serie a|la liga|ligue 1|eredivisie|mls|nwsl|usl|fifa|uefa|copa|libertadores|fa cup|carabao|world cup)\b/i },
+  { key: "tennis", label: "Tennis", pattern: /\b(tennis|atp|wta|wimbledon|us open|australian open|roland garros)\b/i },
+  { key: "basketball", label: "Basketball", pattern: /\b(basketball|nba|wnba|ncaa basketball|euroleague)\b/i },
+  { key: "combat", label: "Combat Sports", pattern: /\b(ufc|mma|boxing|wrestling|aew|wwe|fight night|bellator|one championship|eternal mma)\b/i },
+  { key: "motorsport", label: "Motorsport", pattern: /\b(formula 1|formula one|f1|motogp|moto gp|nascar|indycar|motorsport|supercars|rally|wec)\b/i },
+  { key: "american-football", label: "American Football", pattern: /\b(nfl|cfl|college football|high school football|american football|am\. football|ncaa football)\b/i },
+  { key: "baseball", label: "Baseball", pattern: /\b(baseball|mlb|softball|little league|minor league)\b/i },
+  { key: "ice-hockey", label: "Ice Hockey", pattern: /\b(ice hockey|nhl|ahl|ohl|khl)\b/i },
+  { key: "rugby", label: "Rugby", pattern: /\b(rugby|six nations|super rugby|nrl)\b/i },
+  { key: "cricket", label: "Cricket", pattern: /\b(cricket|t20|ashes|test match|odi)\b/i },
+  { key: "golf", label: "Golf", pattern: /\b(golf|pga|lpga|ryder cup)\b/i },
+  { key: "darts", label: "Darts", pattern: /\b(darts|pdc)\b/i },
+  { key: "snooker", label: "Snooker", pattern: /\b(snooker|pool|billiards)\b/i },
+  { key: "volleyball", label: "Volleyball", pattern: /\b(volleyball|beach volleyball)\b/i },
+  { key: "athletics", label: "Athletics", pattern: /\b(athletics|track and field|diamond league)\b/i }
+];
+
+function inferDlSport(group, event) {
+  const text = [
+    group?.category,
+    event?.event,
+    ...(event?.channels || []).map(channel => channel?.name)
+  ].filter(Boolean).join(" ");
+  return DL_SPORT_CATEGORIES.find(category => category.pattern.test(text)) || {
+    key: "other",
+    label: "Other"
+  };
+}
+
 function renderAllLiveSportsSchedule() {
   if (!liveSportsAllContent || !liveSportsAllStatus || !liveSportsAllCategories) return;
   const data = state.dlstreamsSchedule;
@@ -3172,13 +3202,41 @@ function renderAllLiveSportsSchedule() {
     return;
   }
 
-  const categories = groups.map(group => normaliseDlCategory(group.category));
-  const uniqueCategories = [...new Set(categories)];
+  const allEvents = groups.flatMap(group => (group.events || []).map(event => ({
+    ...event,
+    sport: inferDlSport(group, event)
+  })));
+
+  const categoryCounts = new Map();
+  allEvents.forEach(event => {
+    categoryCounts.set(event.sport.key, (categoryCounts.get(event.sport.key) || 0) + 1);
+  });
+
+  const availableCategories = [
+    ...DL_SPORT_CATEGORIES.filter(category => categoryCounts.has(category.key)),
+    ...(categoryCounts.has("other") ? [{ key: "other", label: "Other" }] : [])
+  ];
+
+  if (state.dlstreamsScheduleCategory !== "all" &&
+      !availableCategories.some(category => category.key === state.dlstreamsScheduleCategory)) {
+    state.dlstreamsScheduleCategory = "all";
+  }
+
   const activeCategory = state.dlstreamsScheduleCategory;
-  liveSportsAllCategories.innerHTML = ["all", ...uniqueCategories].map(category => {
-    const label = category === "all" ? "All" : category;
-    return `<button class="dl-schedule-category-chip${activeCategory === category ? " active" : ""}" type="button" data-dl-category="${escapeHtml(category)}">${escapeHtml(label)}</button>`;
-  }).join("");
+  const totalEvents = allEvents.length;
+  liveSportsAllCategories.innerHTML = [
+    { key: "all", label: "All sports", count: totalEvents },
+    ...availableCategories.map(category => ({
+      ...category,
+      count: categoryCounts.get(category.key) || 0
+    }))
+  ].map(category => `
+    <button class="dl-schedule-category-chip${activeCategory === category.key ? " active" : ""}"
+      type="button" data-dl-category="${escapeHtml(category.key)}">
+      <span>${escapeHtml(category.label)}</span>
+      <small>${category.count}</small>
+    </button>
+  `).join("");
 
   liveSportsAllCategories.querySelectorAll("[data-dl-category]").forEach(button => {
     button.addEventListener("click", () => {
@@ -3188,45 +3246,67 @@ function renderAllLiveSportsSchedule() {
   });
 
   const query = String(state.dlstreamsScheduleQuery || "").trim().toLowerCase();
-  const visibleGroups = groups.map(group => ({
-    ...group,
-    category: normaliseDlCategory(group.category),
-    events: (group.events || []).filter(event => {
-      if (activeCategory !== "all" && normaliseDlCategory(group.category) !== activeCategory) return false;
-      return !query || dlScheduleSearchText(event).includes(query);
-    })
-  })).filter(group => group.events.length);
+  const visibleEvents = allEvents.filter(event => {
+    if (activeCategory !== "all" && event.sport.key !== activeCategory) return false;
+    return !query || dlScheduleSearchText(event).includes(query);
+  });
 
-  liveSportsAllMeta.textContent = data.dateLabel || "Live schedule from DLStreams";
+  liveSportsAllMeta.textContent = `${data.dateLabel || "Today’s live schedule"} · ${visibleEvents.length} event${visibleEvents.length === 1 ? "" : "s"}`;
   liveSportsAllStatus.hidden = true;
 
-  if (!visibleGroups.length) {
-    liveSportsAllContent.innerHTML = '<div class="dl-schedule-status">No events or channels match your filters.</div>';
+  if (!visibleEvents.length) {
+    liveSportsAllContent.innerHTML = `
+      <div class="dl-schedule-empty">
+        <strong>No live events found</strong>
+        <span>Try another sport or clear your search.</span>
+      </div>`;
     return;
   }
 
+  const sections = availableCategories
+    .map(category => ({
+      ...category,
+      events: visibleEvents.filter(event => event.sport.key === category.key)
+    }))
+    .filter(section => section.events.length);
+
   liveSportsAllContent.innerHTML = `
-    ${data.dateLabel ? `<div class="dl-schedule-date">${escapeHtml(data.dateLabel)}</div>` : ""}
-    ${visibleGroups.map(group => `
+    <div class="dl-schedule-overview">
+      <div>
+        <span class="dl-schedule-overview-kicker">${query ? "Search results" : activeCategory === "all" ? "Today’s schedule" : "Filtered schedule"}</span>
+        <strong>${visibleEvents.length} event${visibleEvents.length === 1 ? "" : "s"}</strong>
+      </div>
+      <span>Choose a stream to watch without leaving TV Archive</span>
+    </div>
+
+    ${sections.map(section => `
       <section class="dl-schedule-group">
-        <h2 class="dl-schedule-group-title">${escapeHtml(group.category)}</h2>
-        ${group.events.map(event => `
-          <div class="dl-schedule-event">
-            <time class="dl-schedule-time">${escapeHtml(event.time || "LIVE")}</time>
-            <div>
-              <div class="dl-schedule-event-title">${escapeHtml(event.event || "Live event")}</div>
-              <div class="dl-schedule-channels">
-                ${(event.channels || []).map(channel => `
-                  <button class="dl-schedule-channel" type="button"
-                    data-dlstream-id="${escapeHtml(channel.id)}"
-                    data-dlstream-name="${escapeHtml(channel.name || `Stream ${channel.id}`)}"
-                    data-dlstream-event="${escapeHtml(event.event || "Live event")}" 
-                    data-dlstream-time="${escapeHtml(event.time || "")}">${escapeHtml(channel.name || `Stream ${channel.id}`)}</button>
-                `).join("")}
+        <div class="dl-schedule-group-head">
+          <h2 class="dl-schedule-group-title">${escapeHtml(section.label)}</h2>
+          <span>${section.events.length} event${section.events.length === 1 ? "" : "s"}</span>
+        </div>
+        <div class="dl-schedule-event-list">
+          ${section.events.map(event => `
+            <article class="dl-schedule-event">
+              <time class="dl-schedule-time">${escapeHtml(event.time || "LIVE")}</time>
+              <div class="dl-schedule-event-main">
+                <div class="dl-schedule-event-title">${escapeHtml(event.event || "Live event")}</div>
+                <div class="dl-schedule-channels">
+                  ${(event.channels || []).map(channel => `
+                    <button class="dl-schedule-channel" type="button"
+                      data-dlstream-id="${escapeHtml(channel.id)}"
+                      data-dlstream-name="${escapeHtml(channel.name || `Stream ${channel.id}`)}"
+                      data-dlstream-event="${escapeHtml(event.event || "Live event")}" 
+                      data-dlstream-time="${escapeHtml(event.time || "")}">
+                      <span class="dl-channel-play" aria-hidden="true">${ICONS.play}</span>
+                      <span>${escapeHtml(channel.name || `Stream ${channel.id}`)}</span>
+                    </button>
+                  `).join("")}
+                </div>
               </div>
-            </div>
-          </div>
-        `).join("")}
+            </article>
+          `).join("")}
+        </div>
       </section>
     `).join("")}`;
 

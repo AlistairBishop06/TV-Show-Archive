@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { promisify } from "node:util";
 import express from "express";
+import * as cheerio from "cheerio";
 import { neon } from "@neondatabase/serverless";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -20,6 +21,8 @@ const app = express();
 const authAttempts = new Map();
 const liveSportsScheduleCache = new Map();
 const LIVE_SPORTS_SCHEDULE_CACHE_MS = 10 * 60 * 1000;
+const DLSTREAMS_SCHEDULE_CACHE_MS = 5 * 60 * 1000;
+let dlstreamsScheduleCache = null;
 const SKY_SPORTS_GUIDE_SIDS = new Map([
   [35, 3096],  // Sky Sports Football
   [36, 3097],  // Sky Sports+
@@ -580,6 +583,139 @@ app.get("/api/health", async (_req, res, next) => {
     res.json({ ok: true, database: true, now: rows[0]?.now });
   } catch (error) {
     next(error);
+  }
+});
+
+
+function compactDlText(value) {
+  return String(value || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function dlChannelFromHref(href, name) {
+  const match = String(href || "").match(/[?&]id=(\d+)/i);
+  if (!match) return null;
+  return { id: match[1], name: compactDlText(name) || `Stream ${match[1]}` };
+}
+
+function findDlEventRow($, anchor) {
+  let current = $(anchor);
+  for (let depth = 0; depth < 8; depth += 1) {
+    current = current.parent();
+    if (!current.length) break;
+    const text = compactDlText(current.text());
+    const links = current.find('a[href*="watch.php?id="]');
+    if (/\b(?:[01]?\d|2[0-3]):[0-5]\d\b/.test(text) && links.length && text.length < 1400) {
+      return current;
+    }
+  }
+  return $(anchor).parent();
+}
+
+function dlCategoryForRow($, row) {
+  const ignored = /^(schedule|all|live sports|24\/7|menu)$/i;
+  let current = row;
+  for (let depth = 0; depth < 7 && current?.length; depth += 1) {
+    const directHeading = current.children('h1,h2,h3,h4,h5,[class*="category"]').first();
+    const directText = compactDlText(directHeading.text());
+    if (directText && directText.length < 120 && !ignored.test(directText)) return directText;
+
+    const previousHeading = current.prevAll('h1,h2,h3,h4,h5,[class*="category"]').first();
+    const previousText = compactDlText(previousHeading.text());
+    if (previousText && previousText.length < 120 && !ignored.test(previousText)) return previousText;
+    current = current.parent();
+  }
+  return "Other";
+}
+
+function parseDlstreamsSchedule(html) {
+  const $ = cheerio.load(html);
+  const dateMatch = compactDlText($('body').text()).match(/((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+\d{1,2}(?:st|nd|rd|th)?\s+\w+\s+\d{4}\s*-\s*Schedule Time[^\n]*?(?:GMT|UTC))/i);
+  const dateLabel = dateMatch ? compactDlText(dateMatch[1]) : "Today’s live schedule";
+
+  const rowElements = [];
+  const seenRows = new Set();
+  $('a[href*="watch.php?id="]').each((_index, anchor) => {
+    const row = findDlEventRow($, anchor);
+    const element = row?.get(0);
+    if (!element || seenRows.has(element)) return;
+    seenRows.add(element);
+    rowElements.push(row);
+  });
+
+  const groups = new Map();
+  for (const row of rowElements) {
+    const channels = [];
+    const channelSeen = new Set();
+    row.find('a[href*="watch.php?id="]').each((_index, anchor) => {
+      const channel = dlChannelFromHref($(anchor).attr('href'), $(anchor).text());
+      if (!channel) return;
+      const key = `${channel.id}:${channel.name}`;
+      if (channelSeen.has(key)) return;
+      channelSeen.add(key);
+      channels.push(channel);
+    });
+    if (!channels.length) continue;
+
+    const clone = row.clone();
+    clone.find('script,style,svg,img,button').remove();
+    clone.find('a[href*="watch.php?id="]').remove();
+    let rowText = compactDlText(clone.text());
+    const timeMatch = rowText.match(/\b((?:[01]?\d|2[0-3]):[0-5]\d)\b/);
+    const time = timeMatch ? timeMatch[1] : "";
+    if (time) rowText = compactDlText(rowText.replace(timeMatch[0], ""));
+    rowText = rowText.replace(/^[\-–—:|·\s]+|[\-–—:|·\s]+$/g, "");
+
+    const category = dlCategoryForRow($, row);
+    const event = rowText || channels[0].name || "Live event";
+    if (!groups.has(category)) groups.set(category, []);
+    groups.get(category).push({ time, event, channels });
+  }
+
+  return {
+    dateLabel,
+    fetchedAt: new Date().toISOString(),
+    groups: [...groups.entries()].map(([category, events]) => ({ category, events }))
+  };
+}
+
+async function fetchDlstreamsSchedule() {
+  if (dlstreamsScheduleCache && Date.now() - dlstreamsScheduleCache.savedAt < DLSTREAMS_SCHEDULE_CACHE_MS) {
+    return dlstreamsScheduleCache.data;
+  }
+
+  const response = await fetch("https://dlstreams.st/", {
+    headers: {
+      "Accept": "text/html,application/xhtml+xml",
+      "Accept-Language": "en-GB,en;q=0.9",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/139 Safari/537.36"
+    },
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!response.ok) {
+    const error = new Error(`DLStreams schedule returned HTTP ${response.status}.`);
+    error.status = 502;
+    throw error;
+  }
+
+  const html = await response.text();
+  const data = parseDlstreamsSchedule(html);
+  if (!data.groups.length) {
+    const error = new Error("DLStreams returned a schedule page, but no playable events could be found.");
+    error.status = 502;
+    throw error;
+  }
+  dlstreamsScheduleCache = { savedAt: Date.now(), data };
+  return data;
+}
+
+app.get("/api/dlstreams/schedule", async (_req, res) => {
+  try {
+    const data = await fetchDlstreamsSchedule();
+    res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=120");
+    res.json(data);
+  } catch (error) {
+    console.error("DLStreams schedule error", error);
+    res.status(502).json({ error: "The live schedule could not be loaded from DLStreams right now." });
   }
 });
 

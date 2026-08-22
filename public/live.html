@@ -221,10 +221,40 @@
         <div>
           <div class="eyebrow">Live now</div>
           <h1>Live Sports</h1>
-          <p>Watch Sky Sports channels live without leaving TV Archive.</p>
+          <p>Browse featured channels or open the full live schedule without leaving TV Archive.</p>
         </div>
       </div>
-      <div id="liveSportsContent"></div>
+
+      <div class="live-sports-view-tabs" role="tablist" aria-label="Live sports views">
+        <button id="liveSportsFeaturedTab" class="live-sports-view-tab active" type="button" role="tab" aria-selected="true" aria-controls="liveSportsFeaturedPanel">Featured</button>
+        <button id="liveSportsAllTab" class="live-sports-view-tab" type="button" role="tab" aria-selected="false" aria-controls="liveSportsAllPanel">All</button>
+      </div>
+
+      <div id="liveSportsFeaturedPanel" class="live-sports-view-panel" role="tabpanel" aria-labelledby="liveSportsFeaturedTab">
+        <div id="liveSportsContent"></div>
+      </div>
+
+      <div id="liveSportsAllPanel" class="live-sports-view-panel live-sports-all-panel" role="tabpanel" aria-labelledby="liveSportsAllTab" hidden>
+        <div class="live-sports-all-toolbar">
+          <div>
+            <strong>All live sports</strong>
+            <span id="liveSportsAllMeta">Live schedule from DLStreams</span>
+          </div>
+          <button id="liveSportsAllReload" class="live-sports-all-reload" type="button">Refresh</button>
+        </div>
+
+        <div class="dl-schedule-shell">
+          <div class="dl-schedule-tools">
+            <label class="dl-schedule-search-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input id="liveSportsAllSearch" class="dl-schedule-search" type="search" placeholder="Search events or channels..." autocomplete="off" />
+            </label>
+            <div id="liveSportsAllCategories" class="dl-schedule-categories" aria-label="Schedule categories"></div>
+          </div>
+          <div id="liveSportsAllStatus" class="dl-schedule-status">Open All to load today’s live schedule.</div>
+          <div id="liveSportsAllContent" class="dl-schedule-content"></div>
+        </div>
+      </div>
     </section>
 
     <div id="rowsContainer"></div>

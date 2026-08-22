@@ -220,6 +220,11 @@ const state = {
   activePlayback: null,
   liveScheduleChannel: null,
   liveScheduleOffset: 0,
+  liveSportsView: "featured",
+  dlstreamsSchedule: null,
+  dlstreamsScheduleLoading: false,
+  dlstreamsScheduleQuery: "",
+  dlstreamsScheduleCategory: "all",
   lastProgressWrite: 0,
   pendingEpisodeAdvance: false,
   episodeAdvanceInFlight: false,
@@ -298,6 +303,16 @@ const continueSection = el("continueSection");
 const continueRow = el("continueRow");
 const liveSportsSection = el("liveSportsSection");
 const liveSportsContent = el("liveSportsContent");
+const liveSportsFeaturedTab = el("liveSportsFeaturedTab");
+const liveSportsAllTab = el("liveSportsAllTab");
+const liveSportsFeaturedPanel = el("liveSportsFeaturedPanel");
+const liveSportsAllPanel = el("liveSportsAllPanel");
+const liveSportsAllReload = el("liveSportsAllReload");
+const liveSportsAllMeta = el("liveSportsAllMeta");
+const liveSportsAllSearch = el("liveSportsAllSearch");
+const liveSportsAllCategories = el("liveSportsAllCategories");
+const liveSportsAllStatus = el("liveSportsAllStatus");
+const liveSportsAllContent = el("liveSportsAllContent");
 const liveScheduleWrap = el("liveScheduleWrap");
 const liveScheduleTitle = el("liveScheduleTitle");
 const liveScheduleSubtitle = el("liveScheduleSubtitle");
@@ -3105,6 +3120,193 @@ function liveChannelMarkup(channel) {
   `;
 }
 
+function setLiveSportsView(view = "featured") {
+  const target = view === "all" ? "all" : "featured";
+  state.liveSportsView = target;
+
+  liveSportsFeaturedTab?.classList.toggle("active", target === "featured");
+  liveSportsAllTab?.classList.toggle("active", target === "all");
+  liveSportsFeaturedTab?.setAttribute("aria-selected", String(target === "featured"));
+  liveSportsAllTab?.setAttribute("aria-selected", String(target === "all"));
+
+  if (liveSportsFeaturedPanel) liveSportsFeaturedPanel.hidden = target !== "featured";
+  if (liveSportsAllPanel) liveSportsAllPanel.hidden = target !== "all";
+
+  if (target === "all" && !state.dlstreamsSchedule && !state.dlstreamsScheduleLoading) {
+    void loadAllLiveSportsSchedule();
+  }
+
+  if (APP_PAGE === "live") {
+    searchInput.disabled = target === "all";
+    searchInput.placeholder = target === "all"
+      ? "Use the schedule search below…"
+      : "Search featured live sports channels...";
+  }
+}
+
+function normaliseDlCategory(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text || "Other";
+}
+
+function dlScheduleSearchText(event) {
+  return [
+    event?.time,
+    event?.event,
+    ...(event?.channels || []).flatMap(channel => [channel?.name, channel?.id])
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function renderAllLiveSportsSchedule() {
+  if (!liveSportsAllContent || !liveSportsAllStatus || !liveSportsAllCategories) return;
+  const data = state.dlstreamsSchedule;
+  const groups = Array.isArray(data?.groups) ? data.groups : [];
+
+  if (!data || !groups.length) {
+    liveSportsAllContent.innerHTML = "";
+    liveSportsAllCategories.innerHTML = "";
+    liveSportsAllStatus.hidden = false;
+    liveSportsAllStatus.textContent = state.dlstreamsScheduleLoading
+      ? "Loading the live schedule…"
+      : "The schedule is unavailable right now. Try Refresh.";
+    return;
+  }
+
+  const categories = groups.map(group => normaliseDlCategory(group.category));
+  const uniqueCategories = [...new Set(categories)];
+  const activeCategory = state.dlstreamsScheduleCategory;
+  liveSportsAllCategories.innerHTML = ["all", ...uniqueCategories].map(category => {
+    const label = category === "all" ? "All" : category;
+    return `<button class="dl-schedule-category-chip${activeCategory === category ? " active" : ""}" type="button" data-dl-category="${escapeHtml(category)}">${escapeHtml(label)}</button>`;
+  }).join("");
+
+  liveSportsAllCategories.querySelectorAll("[data-dl-category]").forEach(button => {
+    button.addEventListener("click", () => {
+      state.dlstreamsScheduleCategory = button.dataset.dlCategory || "all";
+      renderAllLiveSportsSchedule();
+    });
+  });
+
+  const query = String(state.dlstreamsScheduleQuery || "").trim().toLowerCase();
+  const visibleGroups = groups.map(group => ({
+    ...group,
+    category: normaliseDlCategory(group.category),
+    events: (group.events || []).filter(event => {
+      if (activeCategory !== "all" && normaliseDlCategory(group.category) !== activeCategory) return false;
+      return !query || dlScheduleSearchText(event).includes(query);
+    })
+  })).filter(group => group.events.length);
+
+  liveSportsAllMeta.textContent = data.dateLabel || "Live schedule from DLStreams";
+  liveSportsAllStatus.hidden = true;
+
+  if (!visibleGroups.length) {
+    liveSportsAllContent.innerHTML = '<div class="dl-schedule-status">No events or channels match your filters.</div>';
+    return;
+  }
+
+  liveSportsAllContent.innerHTML = `
+    ${data.dateLabel ? `<div class="dl-schedule-date">${escapeHtml(data.dateLabel)}</div>` : ""}
+    ${visibleGroups.map(group => `
+      <section class="dl-schedule-group">
+        <h2 class="dl-schedule-group-title">${escapeHtml(group.category)}</h2>
+        ${group.events.map(event => `
+          <div class="dl-schedule-event">
+            <time class="dl-schedule-time">${escapeHtml(event.time || "LIVE")}</time>
+            <div>
+              <div class="dl-schedule-event-title">${escapeHtml(event.event || "Live event")}</div>
+              <div class="dl-schedule-channels">
+                ${(event.channels || []).map(channel => `
+                  <button class="dl-schedule-channel" type="button"
+                    data-dlstream-id="${escapeHtml(channel.id)}"
+                    data-dlstream-name="${escapeHtml(channel.name || `Stream ${channel.id}`)}"
+                    data-dlstream-event="${escapeHtml(event.event || "Live event")}" 
+                    data-dlstream-time="${escapeHtml(event.time || "")}">${escapeHtml(channel.name || `Stream ${channel.id}`)}</button>
+                `).join("")}
+              </div>
+            </div>
+          </div>
+        `).join("")}
+      </section>
+    `).join("")}`;
+
+  liveSportsAllContent.querySelectorAll("[data-dlstream-id]").forEach(button => {
+    button.addEventListener("click", () => openDlstreamsScheduleStream({
+      id: button.dataset.dlstreamId,
+      name: button.dataset.dlstreamName,
+      event: button.dataset.dlstreamEvent,
+      time: button.dataset.dlstreamTime
+    }));
+  });
+}
+
+async function loadAllLiveSportsSchedule({ force = false } = {}) {
+  if (state.dlstreamsScheduleLoading) return;
+  if (state.dlstreamsSchedule && !force) {
+    renderAllLiveSportsSchedule();
+    return;
+  }
+
+  state.dlstreamsScheduleLoading = true;
+  if (liveSportsAllStatus) {
+    liveSportsAllStatus.hidden = false;
+    liveSportsAllStatus.textContent = "Loading the live schedule…";
+  }
+  if (liveSportsAllReload) liveSportsAllReload.disabled = true;
+
+  try {
+    const data = await apiFetch("/api/dlstreams/schedule");
+    state.dlstreamsSchedule = data;
+    state.dlstreamsScheduleCategory = "all";
+    renderAllLiveSportsSchedule();
+  } catch (error) {
+    console.error("DLStreams schedule failed", error);
+    if (liveSportsAllStatus) {
+      liveSportsAllStatus.hidden = false;
+      liveSportsAllStatus.textContent = error.message || "Could not load the live schedule.";
+    }
+    if (liveSportsAllContent) liveSportsAllContent.innerHTML = "";
+  } finally {
+    state.dlstreamsScheduleLoading = false;
+    if (liveSportsAllReload) liveSportsAllReload.disabled = false;
+  }
+}
+
+function reloadAllLiveSports() {
+  state.dlstreamsSchedule = null;
+  void loadAllLiveSportsSchedule({ force: true });
+}
+
+function openDlstreamsScheduleStream(channel) {
+  if (!channel?.id || !requireSignedInForPlayback()) return;
+
+  heroTrailerCommand("pauseVideo");
+  closeModal();
+  state.activePlayback = null;
+  state.pendingEpisodeAdvance = false;
+  state.episodeAdvanceInFlight = false;
+
+  const title = channel.event || channel.name || "Live Sports";
+  playerTitle.textContent = title;
+  playerSubtitle.textContent = [channel.time, channel.name].filter(Boolean).join(" · ") || "Live";
+  document.title = `${title} | TV Archive`;
+
+  playerFrame.setAttribute(
+    "sandbox",
+    "allow-scripts allow-same-origin allow-forms allow-presentation"
+  );
+  playerFrame.src = `${LIVE_STREAM_BASE}${encodeURIComponent(channel.id)}.php`;
+  playerScreen.classList.add("open");
+  playerScreen.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+
+  history.pushState(
+    { player: true, mediaType: "live", channelId: channel.id, title },
+    "",
+    `#live=${encodeURIComponent(channel.id)}`
+  );
+}
+
 function renderLiveSports(query = "") {
   const term = String(query || "").trim().toLowerCase();
   const channels = term
@@ -3254,13 +3456,14 @@ function showLiveSportsView(query = searchInput.value) {
   continueSection.style.display = "none";
   catalogueActions.style.display = "none";
   liveSportsSection.style.display = "block";
-  searchInput.placeholder = "Search live sports channels...";
   renderLiveSports(query);
+  setLiveSportsView(state.liveSportsView);
 }
 
 function hideLiveSportsView() {
   liveSportsSection.style.display = "none";
   continueSection.style.display = "";
+  searchInput.disabled = false;
   searchInput.placeholder = "Search movies and TV shows...";
 
   // Live Sports hides the normal catalogue surfaces. Restore whichever
@@ -4010,6 +4213,14 @@ liveScheduleToday.addEventListener("click", () => {
 });
 liveScheduleTomorrow.addEventListener("click", () => {
   if (state.liveScheduleChannel) loadLiveSchedule(state.liveScheduleChannel, 1);
+});
+
+liveSportsFeaturedTab?.addEventListener("click", () => setLiveSportsView("featured"));
+liveSportsAllTab?.addEventListener("click", () => setLiveSportsView("all"));
+liveSportsAllReload?.addEventListener("click", reloadAllLiveSports);
+liveSportsAllSearch?.addEventListener("input", () => {
+  state.dlstreamsScheduleQuery = liveSportsAllSearch.value;
+  renderAllLiveSportsSchedule();
 });
 
 modalWrap.addEventListener("click", event => {

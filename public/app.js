@@ -3231,9 +3231,10 @@ function renderAllLiveSportsSchedule() {
       count: categoryCounts.get(category.key) || 0
     }))
   ].map(category => `
-    <button class="dl-schedule-category-chip${activeCategory === category.key ? " active" : ""}"
+    <button class="dl-schedule-category-chip dl-sport-${escapeHtml(category.key)}${activeCategory === category.key ? " active" : ""}"
       type="button" data-dl-category="${escapeHtml(category.key)}">
-      <span>${escapeHtml(category.label)}</span>
+      <span class="dl-category-dot" aria-hidden="true"></span>
+      <span class="dl-category-label">${escapeHtml(category.label)}</span>
       <small>${category.count}</small>
     </button>
   `).join("");
@@ -3270,45 +3271,69 @@ function renderAllLiveSportsSchedule() {
     }))
     .filter(section => section.events.length);
 
+  const visibleStreamCount = visibleEvents.reduce((sum, event) => sum + (event.channels || []).length, 0);
+  const visibleSportCount = new Set(visibleEvents.map(event => event.sport.key)).size;
+
   liveSportsAllContent.innerHTML = `
     <div class="dl-schedule-overview">
-      <div>
+      <div class="dl-schedule-overview-copy">
         <span class="dl-schedule-overview-kicker">${query ? "Search results" : activeCategory === "all" ? "Today’s schedule" : "Filtered schedule"}</span>
-        <strong>${visibleEvents.length} event${visibleEvents.length === 1 ? "" : "s"}</strong>
+        <strong>${query ? `Results for “${escapeHtml(state.dlstreamsScheduleQuery || "")}` + "”" : activeCategory === "all" ? "Everything live today" : escapeHtml(availableCategories.find(category => category.key === activeCategory)?.label || "Live sport")}</strong>
       </div>
-      <span>Choose a stream to watch without leaving TV Archive</span>
+      <div class="dl-schedule-overview-stats" aria-label="Schedule summary">
+        <span><strong>${visibleEvents.length}</strong><small>event${visibleEvents.length === 1 ? "" : "s"}</small></span>
+        <span><strong>${visibleStreamCount}</strong><small>stream${visibleStreamCount === 1 ? "" : "s"}</small></span>
+        <span><strong>${visibleSportCount}</strong><small>sport${visibleSportCount === 1 ? "" : "s"}</small></span>
+      </div>
     </div>
 
     ${sections.map(section => `
-      <section class="dl-schedule-group">
+      <section class="dl-schedule-group dl-sport-${escapeHtml(section.key)}">
         <div class="dl-schedule-group-head">
-          <h2 class="dl-schedule-group-title">${escapeHtml(section.label)}</h2>
-          <span>${section.events.length} event${section.events.length === 1 ? "" : "s"}</span>
+          <div class="dl-schedule-group-heading">
+            <span class="dl-group-accent" aria-hidden="true"></span>
+            <div>
+              <h2 class="dl-schedule-group-title">${escapeHtml(section.label)}</h2>
+              <span>${section.events.length} event${section.events.length === 1 ? "" : "s"}</span>
+            </div>
+          </div>
+          <button class="dl-group-filter" type="button" data-dl-category-jump="${escapeHtml(section.key)}">View only ${escapeHtml(section.label)}</button>
         </div>
         <div class="dl-schedule-event-list">
-          ${section.events.map(event => `
+          ${section.events.map(event => {
+            const channelCount = (event.channels || []).length;
+            return `
             <article class="dl-schedule-event">
-              <time class="dl-schedule-time">${escapeHtml(event.time || "LIVE")}</time>
+              <time class="dl-schedule-time"><span>${escapeHtml(event.time || "LIVE")}</span></time>
               <div class="dl-schedule-event-main">
                 <div class="dl-schedule-event-title">${escapeHtml(event.event || "Live event")}</div>
-                <div class="dl-schedule-channels">
-                  ${(event.channels || []).map(channel => `
-                    <button class="dl-schedule-channel" type="button"
-                      data-dlstream-id="${escapeHtml(channel.id)}"
-                      data-dlstream-name="${escapeHtml(channel.name || `Stream ${channel.id}`)}"
-                      data-dlstream-event="${escapeHtml(event.event || "Live event")}" 
-                      data-dlstream-time="${escapeHtml(event.time || "")}">
-                      <span class="dl-channel-play" aria-hidden="true">${ICONS.play}</span>
-                      <span>${escapeHtml(channel.name || `Stream ${channel.id}`)}</span>
-                    </button>
-                  `).join("")}
-                </div>
+                <div class="dl-schedule-event-subtitle">${channelCount} stream${channelCount === 1 ? "" : "s"} available</div>
               </div>
-            </article>
-          `).join("")}
+              <div class="dl-schedule-channels">
+                ${(event.channels || []).map(channel => `
+                  <button class="dl-schedule-channel" type="button"
+                    data-dlstream-id="${escapeHtml(channel.id)}"
+                    data-dlstream-name="${escapeHtml(channel.name || `Stream ${channel.id}`)}"
+                    data-dlstream-event="${escapeHtml(event.event || "Live event")}"
+                    data-dlstream-time="${escapeHtml(event.time || "")}">
+                    <span class="dl-channel-name">${escapeHtml(channel.name || `Stream ${channel.id}`)}</span>
+                    <span class="dl-channel-watch">Watch ${ICONS.play}</span>
+                  </button>
+                `).join("")}
+              </div>
+            </article>`;
+          }).join("")}
         </div>
       </section>
     `).join("")}`;
+
+  liveSportsAllContent.querySelectorAll("[data-dl-category-jump]").forEach(button => {
+    button.addEventListener("click", () => {
+      state.dlstreamsScheduleCategory = button.dataset.dlCategoryJump || "all";
+      renderAllLiveSportsSchedule();
+      liveSportsAllCategories?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  });
 
   liveSportsAllContent.querySelectorAll("[data-dlstream-id]").forEach(button => {
     button.addEventListener("click", () => openDlstreamsScheduleStream({

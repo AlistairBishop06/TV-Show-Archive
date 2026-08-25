@@ -1,93 +1,279 @@
-# TV Archive — GitHub Pages frontend + Vercel API + Neon
+# TV Archive
 
-## Architecture
+<p align="center">
+  <img src="public/assets/tv-archive-logo.png" alt="TV Archive" width="420">
+</p>
 
-- `public/` is published by GitHub Pages.
-- `vercel-api/` is deployed as a Vercel Express project.
-- Neon stores users, hashed session tokens, and watch history.
-- The only user-defined Vercel environment variable is `DATABASE_URL`.
+<p align="center">
+  A full-stack streaming-style web application for discovering, organising and watching movies, television and live sports.
+</p>
 
-## 1. Set your GitHub Pages origin
+---
 
-Open `vercel-api/server.mjs` and replace:
+## Overview
 
-```js
-const GITHUB_PAGES_ORIGIN = "https://YOUR_GITHUB_USERNAME.github.io";
-```
+**TV Archive** is a full-stack web application inspired by modern streaming platforms.
 
-If the Pages site is:
+It combines movie and television discovery, user accounts, cross-device watch progress, personalised lists, trailers, live sports schedules and embedded playback into a single responsive interface.
 
-```text
-https://YOUR_GITHUB_USERNAME.github.io/TV-Show-Archive/
-```
+The project began as a simple TV episode browser and has evolved into a considerably larger application involving frontend development, authentication, PostgreSQL persistence, third-party APIs, responsive UI design and serverless deployment.
 
-then the origin is only:
+### Key Goals
 
-```text
-https://YOUR_GITHUB_USERNAME.github.io
-```
+- Build a polished streaming-platform-style interface from scratch
+- Support both movies and television
+- Maintain watch progress across devices
+- Keep database usage efficient on a serverless architecture
+- Integrate multiple external metadata and media services
+- Provide live sports discovery and schedules
+- Create a responsive experience across desktop and mobile
+- Maintain a lightweight architecture suitable for free-tier hosting
 
-Do not include the repository path.
+---
 
-## 2. Deploy the API to Vercel
+# Features
 
-1. Push this project to GitHub.
-2. In Vercel, create a new project and import the GitHub repository.
-3. Set the Vercel project **Root Directory** to `vercel-api`.
-4. Leave the normal Express/Node build settings at their defaults. There is no frontend output directory for the API.
-5. In Project Settings → Environment Variables, add only:
+## Movies & Television
 
-```text
-DATABASE_URL=<your Neon connection string>
-```
+TV Archive provides a unified catalogue for movies and television shows.
 
-6. Deploy.
-7. Test:
+Users can:
 
-```text
-https://YOUR-VERCEL-PROJECT.vercel.app/api/health
-```
+- Browse popular movies and TV series
+- Filter between All, TV Shows and Movies
+- Browse titles by genre
+- Open detailed title information
+- Browse seasons and episodes
+- Search across the catalogue
+- Resume previously watched titles
+- View dynamically generated featured content
+- Watch trailers directly inside the interface
 
-It should return JSON with `"ok": true` and `"database": true`.
+Content is presented using responsive media rows similar to commercial streaming platforms.
 
-## 3. Connect GitHub Pages to Vercel
+---
 
-After Vercel gives you the production domain, edit `public/config.js`:
+## Playback
 
-```js
-window.SHOWHUB_API_BASE = "https://YOUR-VERCEL-PROJECT.vercel.app";
-```
+Movies and episodes open inside TV Archive's dedicated full-screen player.
 
-Do not add a trailing slash.
+The player supports:
 
-Commit and push. The included `.github/workflows/pages.yml` publishes `public/` to GitHub Pages.
+- Resume position
+- Episode information
+- Season and episode tracking
+- Playback progress monitoring
+- Fullscreen playback
+- Automatic next-episode handling
+- Browser history integration
+- Clean return-to-TV-Archive navigation
 
-## Authentication
+Playback providers are isolated from the rest of the application so they can be replaced without redesigning the catalogue or account systems.
 
-The Pages build does not use cross-site cookies. Register/login returns a random bearer session token. The browser sends it in the `Authorization` header. Neon stores only a SHA-256 hash of the session token.
+---
 
-The session token is stored in the browser's localStorage so sign-in survives a refresh/browser restart. Passwords remain scrypt-hashed in the database.
+## Cross-Device Watch Progress
 
-## Local API development
+Watch history is associated with the signed-in user rather than the browser.
 
-Create `vercel-api/.env` containing only:
+TV Archive records:
 
-```text
-DATABASE_URL=postgresql://...
-```
+- Movie or series
+- Season
+- Episode
+- Episode title
+- Playback position
+- Duration
+- Last watched time
+- Poster and backdrop metadata
 
-Then:
+The **Currently Watching** section allows users to resume exactly where they stopped.
 
-```bash
-cd vercel-api
-npm install
-npm run dev
-```
+### Database Optimisation
 
-For local frontend testing, temporarily point `public/config.js` at `http://localhost:3000`.
+The application deliberately avoids continuously writing playback progress to the database.
 
-## Live Sports programme guide
+During playback, progress is stored locally.
 
-The Live Sports tab includes an on-demand programme guide for the UK Sky Sports channels. Opening **Schedule** fetches today's or tomorrow's listings through the Vercel API and caches the result briefly. The guide route does not query Neon, and the database schema is initialised lazily so opening a sports schedule on its own does not wake the Neon compute.
+The database is only synchronised at meaningful checkpoints such as:
 
-International Sky Sport streams remain watchable, but a Schedule button is only shown where a reliable guide source has been mapped.
+- Pause
+- Seeking
+- Episode completion
+- Leaving the player
+- Closing or navigating away from the page
+
+This significantly reduces unnecessary serverless database activity.
+
+---
+
+# Accounts
+
+TV Archive includes its own username and password authentication system.
+
+Users can:
+
+- Register an account
+- Sign in
+- Sign out
+- Change username
+- Change password
+- Upload a profile picture
+- Remove their profile picture
+- View their account creation date
+
+Passwords are never stored in plaintext.
+
+They are hashed server-side using **scrypt** before being written to the database.
+
+Authentication uses random bearer session tokens, while only hashed versions of those tokens are stored server-side.
+
+---
+
+# Watch Later
+
+Any movie or television show can be added to the user's **Watch Later** collection.
+
+Saved titles are synchronised with the user's account and can be opened directly from their profile.
+
+---
+
+# Custom Lists
+
+Users can create their own collections of movies and television shows.
+
+Lists support:
+
+- Custom names
+- Rename
+- Delete
+- Add or remove titles
+- Public or private visibility
+- Case-insensitive unique names per user
+
+Example lists might include:
+
+> Best 90s Sitcoms  
+> Films to Watch This Weekend  
+> Favourite Sci-Fi  
+> Top TV Shows
+
+---
+
+# Discover Lists
+
+Public lists created by other users can be explored through the **Discover Lists** section.
+
+Users can:
+
+- Browse public collections
+- Expand a collection
+- View all included titles
+- Open titles directly from a shared list
+- Copy a shareable link to a collection
+
+This adds a lightweight social discovery layer without requiring followers or a traditional social network.
+
+---
+
+# Live Sports
+
+TV Archive includes a dedicated **Live Sports** section.
+
+There are two browsing modes.
+
+## Featured
+
+Featured contains a curated collection of sports channels organised by region.
+
+Current regions include:
+
+- United Kingdom
+- Germany & Austria
+- Italy
+- New Zealand
+
+Featured channels appear using the same media-card design used throughout the main TV catalogue.
+
+---
+
+## All Sports
+
+The **All** section dynamically builds a sports directory from the current live schedule.
+
+Sports are automatically categorised into sections such as:
+
+- Football
+- Tennis
+- Basketball
+- Motorsport
+- Combat Sports
+- Rugby
+- Cricket
+- Golf
+- Baseball
+- Ice Hockey
+- American Football
+- Darts
+- Athletics
+- Volleyball
+
+Each event is displayed using a responsive media card with:
+
+- Sport-specific thumbnail
+- Event title
+- Start time
+- Channel or source
+- Watch action
+
+Users can also search the live schedule and filter by sport.
+
+---
+
+## Live Schedule
+
+The backend reads live schedule information and converts it into structured data for the frontend.
+
+Rather than embedding an external schedule interface, TV Archive renders the information using its own components so the live-sports experience remains consistent with the rest of the application.
+
+Schedule responses are cached briefly to reduce unnecessary upstream requests.
+
+---
+
+# Trailer System
+
+Trailers are integrated throughout the application.
+
+They can appear:
+
+- Behind the featured hero
+- Inside movie and show detail views
+- As desktop hover previews on media cards
+
+Trailer previews are:
+
+- Muted automatically
+- Loaded only when required
+- Destroyed when no longer visible
+- Disabled on touch devices
+- Disabled when reduced-motion accessibility settings are enabled
+
+This keeps the interface responsive while still creating a streaming-platform feel.
+
+---
+
+# Search & Discovery
+
+Search supports both movies and TV shows and works across dedicated routes.
+
+The application also provides:
+
+- Genre-based discovery
+- Popular-title rows
+- Featured content
+- Search result grids
+- Category pages
+- See All views
+- Incremental catalogue loading
+
+---

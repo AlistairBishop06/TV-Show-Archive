@@ -134,6 +134,17 @@ const hoverTrailerPreview = document.createElement("div");
 hoverTrailerPreview.className = "hover-trailer-preview";
 hoverTrailerPreview.setAttribute("aria-hidden", "true");
 document.body.appendChild(hoverTrailerPreview);
+
+hoverTrailerPreview.addEventListener("mouseleave", event => {
+  const nextTarget = event.relatedTarget;
+  if (nextTarget instanceof Node && hoverTrailerCard?.contains(nextTarget)) return;
+  stopHoverTrailer();
+});
+
+hoverTrailerPreview.addEventListener("click", event => {
+  if (event.target.closest("[data-hover-trailer-sound]")) return;
+  if (hoverTrailerCard?.isConnected) hoverTrailerCard.click();
+});
 const HOME_PAGE_BATCH = 1;
 const WATCH_HISTORY_KEY = "showhub-watch-history-v2";
 const PENDING_WATCH_HISTORY_KEY_PREFIX = "showhub-pending-watch-progress-v1";
@@ -2678,6 +2689,7 @@ function bindHoverTrailer(card, media) {
   if (!layer) return;
 
   card.addEventListener("mouseenter", () => {
+    if (hoverTrailerCard === card && layer.classList.contains("visible")) return;
     if (hoverTrailerCard && hoverTrailerCard !== card) stopHoverTrailer(hoverTrailerCard);
     if (hoverTrailerTimer) clearTimeout(hoverTrailerTimer);
 
@@ -2710,6 +2722,8 @@ function bindHoverTrailer(card, media) {
         positionHoverTrailer(card);
         layer.setAttribute("aria-hidden", "false");
         layer.classList.add("visible");
+        updateTrailerSoundButtons();
+        if (!trailersMuted) trailerFrameCommand(frame, "unMute");
       };
       frame._trailerHide = () => {
         layer.classList.remove("visible");
@@ -2720,7 +2734,17 @@ function bindHoverTrailer(card, media) {
 
       const video = document.createElement("div");
       video.className = "hover-trailer-video";
-      video.appendChild(frame);
+
+      const soundToggle = document.createElement("button");
+      soundToggle.className = "trailer-sound-toggle hover-trailer-sound-toggle";
+      soundToggle.type = "button";
+      soundToggle.dataset.hoverTrailerSound = "";
+      soundToggle.addEventListener("click", event => {
+        event.stopPropagation();
+        setTrailersMuted(!trailersMuted);
+      });
+
+      video.append(frame, soundToggle);
 
       const details = document.createElement("div");
       details.className = "hover-trailer-details";
@@ -2742,7 +2766,11 @@ function bindHoverTrailer(card, media) {
     }, HOVER_TRAILER_DELAY_MS);
   });
 
-  card.addEventListener("mouseleave", () => stopHoverTrailer(card));
+  card.addEventListener("mouseleave", event => {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && layer.contains(nextTarget)) return;
+    stopHoverTrailer(card);
+  });
 }
 
 window.addEventListener("resize", () => {
@@ -2760,7 +2788,12 @@ document.addEventListener("scroll", () => {
 function updateTrailerSoundButtons() {
   const icon = trailersMuted ? ICONS.volumeOff : ICONS.volumeOn;
   const label = trailersMuted ? "Unmute trailer" : "Mute trailer";
-  [heroSoundToggle, modalSoundToggle].forEach(button => {
+  const buttons = [
+    heroSoundToggle,
+    modalSoundToggle,
+    ...hoverTrailerPreview.querySelectorAll("[data-hover-trailer-sound]")
+  ];
+  buttons.forEach(button => {
     if (!button) return;
     button.innerHTML = icon;
     button.setAttribute("aria-label", label);
@@ -2850,7 +2883,11 @@ window.addEventListener("message", event => {
 
 function setTrailersMuted(muted) {
   trailersMuted = Boolean(muted);
-  [heroTrailer, modalTrailer].forEach(frame => {
+  [heroTrailer, modalTrailer, ...hoverTrailerPreview.querySelectorAll("iframe")].forEach(frame => {
+    if (hoverTrailerPreview.contains(frame)) {
+      trailerFrameCommand(frame, trailersMuted ? "mute" : "unMute");
+      return;
+    }
     if (!frame?.classList.contains("visible")) return;
     trailerFrameCommand(frame, trailersMuted ? "mute" : "unMute");
   });

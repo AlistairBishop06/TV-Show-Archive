@@ -1575,7 +1575,7 @@ function navigateToPage(destination, { replace = false, back = false } = {}) {
 function openAuthModal(mode = "signin") {
   if (APP_PAGE !== "auth") {
     const currentFile = window.location.pathname.split("/").filter(Boolean).pop() || "index.html";
-    const returnPath = `./${currentFile}${window.location.search}`;
+    const returnPath = `./${currentFile}${window.location.search}${window.location.hash}`;
     const params = new URLSearchParams({ mode, return: returnPath });
     navigateToPage(`./signin.html?${params.toString()}`);
     return;
@@ -3809,7 +3809,7 @@ function hideLiveSportsView() {
   heroSection.style.display = state.heroMedia ? "block" : "none";
 }
 
-function openLiveSportsChannel(channel) {
+function openLiveSportsChannel(channel, { replaceRoute = false } = {}) {
   if (!requireSignedInForPlayback()) return;
 
   heroTrailerCommand("pauseVideo");
@@ -3837,7 +3837,7 @@ function openLiveSportsChannel(channel) {
   playerScreen.setAttribute("aria-hidden", "false");
   document.body.style.overflow = "hidden";
 
-  history.pushState(
+  history[replaceRoute ? "replaceState" : "pushState"](
     { player: true, mediaType: "live", channelId: channel.id, title: channel.name },
     "",
     `#live=${encodeURIComponent(channel.id)}`
@@ -4429,7 +4429,7 @@ async function openEpisode(show, season, episode, options = {}) {
       }
     );
 
-    history.pushState(
+    history[options.replaceRoute ? "replaceState" : "pushState"](
       { player: true, mediaType: "tv", title: getMediaName(show), season, episode },
       "",
       `#watch=${encodeURIComponent(imdbId)}-s${season}e${episode}`
@@ -4607,7 +4607,7 @@ async function openMovie(movie, options = {}) {
       }
     );
 
-    history.pushState(
+    history[options.replaceRoute ? "replaceState" : "pushState"](
       { player: true, mediaType: "movie", title: getMediaName(movie) },
       "",
       `#watch=${encodeURIComponent(imdbId)}-movie`
@@ -4941,8 +4941,101 @@ window.addEventListener("message", event => {
   }
 });
 
+function parsePlaybackRoute() {
+  const hash = window.location.hash.slice(1);
+  const watchMatch = hash.match(/^watch=(tt\d+)-(movie|s(\d+)e(\d+))$/i);
+  if (watchMatch) {
+    return watchMatch[2].toLowerCase() === "movie"
+      ? { type: "movie", imdbId: watchMatch[1] }
+      : {
+          type: "tv",
+          imdbId: watchMatch[1],
+          season: Number(watchMatch[3]),
+          episode: Number(watchMatch[4])
+        };
+  }
+
+  const liveMatch = hash.match(/^live=(.+)$/i);
+  if (liveMatch) {
+    try {
+      return { type: "live", channelId: decodeURIComponent(liveMatch[1]) };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+async function resolveMediaForPlaybackRoute(route) {
+  const saved = getSavedPlayback(route.imdbId);
+
+  if (route.type === "tv") {
+    try {
+      const show = await fetchJson(`${TVMAZE_API}/lookup/shows?imdb=${encodeURIComponent(route.imdbId)}`);
+      if (show?.externals?.imdb) return { ...show, mediaType: "tv" };
+    } catch (error) {
+      console.warn("Could not resolve the routed TV show from TVMaze", error);
+    }
+    if (saved) return libraryItemToMedia(saved);
+    return {
+      mediaType: "tv",
+      id: null,
+      name: "TV show",
+      externals: { imdb: route.imdbId },
+      image: null
+    };
+  }
+
+  try {
+    const payload = await fetchJson(
+      `${CINEMETA_API}/meta/movie/${encodeURIComponent(route.imdbId)}.json`
+    );
+    const movie = normaliseMovies([payload?.meta])[0];
+    if (movie) return movie;
+  } catch (error) {
+    console.warn("Could not resolve the routed movie from Cinemeta", error);
+  }
+  if (saved) return libraryItemToMedia(saved);
+  return {
+    mediaType: "movie",
+    id: route.imdbId,
+    imdbId: route.imdbId,
+    name: "Movie"
+  };
+}
+
+async function restorePlaybackRoute(route = parsePlaybackRoute()) {
+  if (!route) return false;
+  if (!state.user) {
+    openAuthModal("signin");
+    return true;
+  }
+
+  if (route.type === "live") {
+    const channel = LIVE_SPORTS_CHANNELS.find(item => String(item.id) === String(route.channelId)) || {
+      id: route.channelId,
+      name: `Live channel ${route.channelId}`,
+      region: "Live Sports"
+    };
+    openLiveSportsChannel(channel, { replaceRoute: true });
+    return true;
+  }
+
+  const media = await resolveMediaForPlaybackRoute(route);
+  if (route.type === "movie") {
+    await openMovie(media, { replaceRoute: true });
+  } else {
+    await openEpisode(media, route.season, route.episode, { replaceRoute: true });
+  }
+  return true;
+}
+
 window.addEventListener("popstate", () => {
-  if (playerScreen.classList.contains("open")) closePlayer({ resetRoute: false });
+  const route = parsePlaybackRoute();
+  if (playerScreen.classList.contains("open")) {
+    closePlayer({ resetRoute: false });
+  }
+  if (route) void restorePlaybackRoute(route);
 });
 
 // A normal fetch can be cancelled when the page is torn down. keepalive lets
@@ -4975,6 +5068,7 @@ async function initialiseTVArchive() {
   migrateWatchHistory();
 
   const initialParams = new URLSearchParams(window.location.search);
+  const playbackRoute = parsePlaybackRoute();
   const pageScopes = { home: "all", tv: "tv", movies: "movie", live: "live" };
   const requestedScope = initialParams.get("scope");
   state.typeScope = ["all", "tv", "movie"].includes(requestedScope)
@@ -5011,8 +5105,14 @@ async function initialiseTVArchive() {
     return;
   }
 
+  if (playbackRoute && !state.user) {
+    openAuthModal("signin");
+    return;
+  }
+
   if (state.typeScope === "live") {
     showLiveSportsView("");
+    if (playbackRoute) await restorePlaybackRoute(playbackRoute);
     return;
   }
 
@@ -5020,6 +5120,7 @@ async function initialiseTVArchive() {
     const initialQuery = initialParams.get("q")?.trim() || "";
     searchInput.value = initialQuery;
     if (initialQuery) await searchCatalogue(initialQuery);
+    if (playbackRoute) await restorePlaybackRoute(playbackRoute);
     return;
   }
 
@@ -5034,6 +5135,8 @@ async function initialiseTVArchive() {
     const title = initialParams.get("title") || descriptor.genre || "Browse titles";
     openCollectionView(title, [], descriptor);
   }
+
+  if (playbackRoute) await restorePlaybackRoute(playbackRoute);
 }
 
 // When a signed-in page returns from the back/forward cache, re-fetch the

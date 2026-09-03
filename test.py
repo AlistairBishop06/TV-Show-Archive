@@ -7,7 +7,6 @@ PROVIDERS = {
     "CineSrc": f"https://cinesrc.st/embed/movie/{TMDB}",
     "VidNest": f"https://vidnest.fun/movie/{TMDB}",
     "VidZen": f"https://vidzen.fun/movie/{TMDB}",
-    "VidKing": f"https://www.vidking.net/embed/movie/{TMDB}",
     "VidSrc": f"https://vidsrc.tw/embed/movie/{IMDB}",
     "VidFast": f"https://vidfast.vc/movie/{IMDB}",
 }

@@ -150,6 +150,16 @@ const WATCH_HISTORY_KEY = "showhub-watch-history-v2";
 const PENDING_WATCH_HISTORY_KEY_PREFIX = "showhub-pending-watch-progress-v1";
 const AUTH_TOKEN_KEY = "showhub-auth-token-v1";
 const AUTH_USER_CACHE_KEY = "showhub-auth-user-v1";
+const PLAYBACK_SOURCE_KEY = "tvarchive-playback-source-v1";
+const PLAYBACK_SOURCE_SWITCHING_KEY = "tvarchive-source-switching-v1";
+const PLAYBACK_LOAD_TIMEOUT_MS = 5000;
+const PLAYBACK_SOURCES = [
+  { id: "vidfast", label: "VidFast" },
+  { id: "vidnest", label: "VidNest" },
+  { id: "vidsrc", label: "VidSrc" }
+];
+const playbackTmdbIdCache = new Map();
+let playerLoadTimeoutId = null;
 const LEGACY_WATCH_HISTORY_KEY = "showhub-watch-history-v1";
 const MAX_WATCH_HISTORY = 40;
 const MIN_ITEMS_PER_GENRE_ROW = 5;
@@ -213,6 +223,52 @@ const ICONS = {
   volumeOff: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>'
 };
 
+function playbackSourceStorageKey(userId = null) {
+  return userId ? `${PLAYBACK_SOURCE_KEY}:${userId}` : PLAYBACK_SOURCE_KEY;
+}
+
+function isValidPlaybackSource(sourceId) {
+  return PLAYBACK_SOURCES.some(source => source.id === sourceId);
+}
+
+function readPreferredPlaybackSource(userId = null) {
+  try {
+    const stored = localStorage.getItem(playbackSourceStorageKey(userId)) ||
+      localStorage.getItem(PLAYBACK_SOURCE_KEY) || "vidfast";
+    return isValidPlaybackSource(stored) ? stored : "vidfast";
+  } catch {
+    return "vidfast";
+  }
+}
+
+function savePreferredPlaybackSource(sourceId, userId = state.user?.id || null) {
+  try {
+    localStorage.setItem(playbackSourceStorageKey(userId), sourceId);
+  } catch {
+    // Source switching still works for this session if storage is unavailable.
+  }
+}
+
+function playbackSourceSwitchingStorageKey(userId = null) {
+  return userId ? `${PLAYBACK_SOURCE_SWITCHING_KEY}:${userId}` : PLAYBACK_SOURCE_SWITCHING_KEY;
+}
+
+function readSourceSwitchingPreference(userId = null) {
+  try {
+    return localStorage.getItem(playbackSourceSwitchingStorageKey(userId)) !== "fixed";
+  } catch {
+    return true;
+  }
+}
+
+function saveSourceSwitchingPreference(enabled, userId = state.user?.id || null) {
+  try {
+    localStorage.setItem(playbackSourceSwitchingStorageKey(userId), enabled ? "auto" : "fixed");
+  } catch {
+    // The in-memory setting remains available for the current session.
+  }
+}
+
 const state = {
   homeShows: [],
   homeMovies: [],
@@ -229,6 +285,8 @@ const state = {
   loadingTV: false,
   loadingMovies: false,
   activePlayback: null,
+  playbackSource: readPreferredPlaybackSource(),
+  autoSwitchPlaybackSource: readSourceSwitchingPreference(),
   liveScheduleChannel: null,
   liveScheduleOffset: 0,
   liveSportsView: "featured",
@@ -377,6 +435,35 @@ const profileNewPassword = el("profileNewPassword");
 const profileConfirmPassword = el("profileConfirmPassword");
 const profilePasswordMessage = el("profilePasswordMessage");
 const profileLogoutButton = el("profileLogoutButton");
+const profileAccountGrid = profileSection.querySelector('[data-profile-panel="account"] .profile-panel-grid');
+const profilePlaybackCard = document.createElement("section");
+profilePlaybackCard.className = "profile-card profile-wide-card playback-settings-card";
+profilePlaybackCard.innerHTML = `
+  <div class="profile-card-head">
+    <div>
+      <h2>Playback source</h2>
+      <p>Choose the source used first whenever you play a movie or episode.</p>
+    </div>
+  </div>
+  <label class="playback-settings-field">
+    <span>Preferred source</span>
+    <select id="profilePlaybackSource" aria-describedby="profilePlaybackSourceMessage">
+      ${PLAYBACK_SOURCES.map(source => `<option value="${source.id}">${source.label}</option>`).join("")}
+    </select>
+  </label>
+  <label class="playback-settings-field">
+    <span>When playback stalls</span>
+    <select id="profileSourceSwitching" aria-describedby="profilePlaybackSourceMessage">
+      <option value="auto">Automatically try the next source</option>
+      <option value="fixed">Stay on the preferred source</option>
+    </select>
+  </label>
+  <p class="playback-settings-note">Automatic mode tries the next source after five seconds without playback progress. Fixed mode always remains on your preferred source.</p>
+  <div id="profilePlaybackSourceMessage" class="profile-form-message" role="status"></div>`;
+profileAccountGrid?.insertBefore(profilePlaybackCard, profileLogoutButton?.closest(".profile-card") || null);
+const profilePlaybackSource = el("profilePlaybackSource");
+const profileSourceSwitching = el("profileSourceSwitching");
+const profilePlaybackSourceMessage = el("profilePlaybackSourceMessage");
 const watchLaterButton = el("watchLaterButton");
 const addToListButton = el("addToListButton");
 const modalListPicker = el("modalListPicker");
@@ -767,6 +854,8 @@ function renderProfilePage() {
   profileStatLists.textContent = String(state.userLists.length);
   profileStatLatest.textContent = formatProfileActivity(latest);
   profileClearHistory.disabled = history.length === 0;
+  profilePlaybackSource.value = state.playbackSource;
+  profileSourceSwitching.value = state.autoSwitchPlaybackSource ? "auto" : "fixed";
 
   if (!history.length) {
     profileHistoryList.innerHTML = '<div class="profile-history-empty">Nothing in Currently Watching yet.</div>';
@@ -1321,6 +1410,73 @@ async function submitProfilePassword(event) {
   }
 }
 
+async function saveProfilePlaybackSource() {
+  if (!state.user) return;
+  const sourceId = profilePlaybackSource.value;
+  if (!isValidPlaybackSource(sourceId)) return;
+
+  state.playbackSource = sourceId;
+  savePreferredPlaybackSource(sourceId, state.user.id);
+  profilePlaybackSource.disabled = true;
+  profilePlaybackSourceMessage.textContent = "Saving...";
+  profilePlaybackSourceMessage.classList.remove("success");
+
+  try {
+    const data = await apiFetch("/api/account/playback-source", {
+      method: "PATCH",
+      body: JSON.stringify({ source: sourceId })
+    });
+    state.user = data?.user || { ...state.user, playbackSource: sourceId };
+    cacheAccountUser(state.user);
+    profilePlaybackSourceMessage.textContent = "Playback preference saved.";
+    profilePlaybackSourceMessage.classList.add("success");
+  } catch (error) {
+    // Keep the local per-account preference so the setting still works while
+    // an older API deployment is being upgraded.
+    state.user = { ...state.user, playbackSource: sourceId };
+    cacheAccountUser(state.user);
+    profilePlaybackSourceMessage.textContent = error.status === 404
+      ? "Saved on this device. Account sync will activate after the API update."
+      : "Saved on this device, but account sync is currently unavailable.";
+    console.warn("Could not sync playback source", error);
+  } finally {
+    profilePlaybackSource.disabled = false;
+  }
+}
+
+async function saveProfileSourceSwitching() {
+  if (!state.user) return;
+  const enabled = profileSourceSwitching.value === "auto";
+  state.autoSwitchPlaybackSource = enabled;
+  if (!enabled) cancelPlayerLoadWatchdog();
+  state.user = { ...state.user, autoSwitchPlaybackSource: enabled };
+  saveSourceSwitchingPreference(enabled, state.user.id);
+  cacheAccountUser(state.user);
+  profileSourceSwitching.disabled = true;
+  profilePlaybackSourceMessage.textContent = "Saving...";
+  profilePlaybackSourceMessage.classList.remove("success");
+
+  try {
+    const data = await apiFetch("/api/account/source-switching", {
+      method: "PATCH",
+      body: JSON.stringify({ enabled })
+    });
+    state.user = data?.user || state.user;
+    cacheAccountUser(state.user);
+    profilePlaybackSourceMessage.textContent = enabled
+      ? "Automatic source switching enabled."
+      : "Playback will stay on your preferred source.";
+    profilePlaybackSourceMessage.classList.add("success");
+  } catch (error) {
+    profilePlaybackSourceMessage.textContent = error.status === 404
+      ? "Saved on this device. Account sync will activate after the API update."
+      : "Saved on this device, but account sync is currently unavailable.";
+    console.warn("Could not sync source-switching preference", error);
+  } finally {
+    profileSourceSwitching.disabled = false;
+  }
+}
+
 function setAccountUser(user, { persist = true } = {}) {
   const previousUserId = state.user?.id || null;
   state.user = user || null;
@@ -1328,6 +1484,8 @@ function setAccountUser(user, { persist = true } = {}) {
   closeAccountMenu();
 
   if (!state.user) {
+    state.playbackSource = readPreferredPlaybackSource();
+    state.autoSwitchPlaybackSource = readSourceSwitchingPreference();
     state.watchHistory = [];
     state.watchLater = [];
     state.userLists = [];
@@ -1339,6 +1497,20 @@ function setAccountUser(user, { persist = true } = {}) {
     renderContinueWatching();
     return;
   }
+
+  const accountPlaybackSource = isValidPlaybackSource(state.user.playbackSource)
+    ? state.user.playbackSource
+    : readPreferredPlaybackSource(state.user.id);
+  state.playbackSource = accountPlaybackSource;
+  state.user.playbackSource = accountPlaybackSource;
+  savePreferredPlaybackSource(accountPlaybackSource, state.user.id);
+  const accountSourceSwitching = typeof state.user.autoSwitchPlaybackSource === "boolean"
+    ? state.user.autoSwitchPlaybackSource
+    : readSourceSwitchingPreference(state.user.id);
+  state.autoSwitchPlaybackSource = accountSourceSwitching;
+  state.user.autoSwitchPlaybackSource = accountSourceSwitching;
+  saveSourceSwitchingPreference(accountSourceSwitching, state.user.id);
+  if (persist) cacheAccountUser(state.user);
 
   if (previousUserId && String(previousUserId) !== String(state.user.id)) {
     state.watchLater = [];
@@ -1814,11 +1986,13 @@ function syncActivePlaybackOnExit({ keepalive = false } = {}) {
   saveWatchEntry(entry, { syncRemote: true, keepalive });
 }
 
-function isVidFastOrigin(origin) {
+function isPlaybackProviderOrigin(origin) {
   try {
     const url = new URL(origin);
-    return url.protocol === "https:" &&
-      (url.hostname === "vidfast.vc" || url.hostname.endsWith(".vidfast.vc"));
+    const providerHosts = ["vidfast.vc", "vidnest.fun", "vidsrc.tw"];
+    return url.protocol === "https:" && providerHosts.some(host =>
+      url.hostname === host || url.hostname.endsWith(`.${host}`)
+    );
   } catch {
     return false;
   }
@@ -3678,24 +3852,309 @@ function requireSignedInForPlayback() {
   return false;
 }
 
-async function getPlaybackUrl(media, { mediaType, season = null, episode = null, startAt = 0 }) {
+async function getPlaybackUrl(media, {
+  mediaType,
+  season = null,
+  episode = null,
+  startAt = 0,
+  source = state.playbackSource
+}) {
   const params = new URLSearchParams({
     type: mediaType,
     imdbId: getImdbId(media),
-    startAt: String(Math.max(0, Math.floor(Number(startAt) || 0)))
+    startAt: String(Math.max(0, Math.floor(Number(startAt) || 0))),
+    source
   });
   if (mediaType === "tv") {
     params.set("season", String(season));
     params.set("episode", String(episode));
   }
-  const data = await apiFetch(`/api/playback-url?${params.toString()}`);
-  if (!data?.url) throw new Error("Playback URL was not available.");
-  return data.url;
+
+  let sourceError = null;
+  try {
+    const data = await apiFetch(`/api/playback-url?${params.toString()}`);
+    if (!data?.url) throw new Error("Playback URL was not available.");
+    if (!playbackUrlMatchesSource(data.url, source)) {
+      throw new Error(`The playback service returned the wrong source for ${source}.`);
+    }
+    return data.url;
+  } catch (error) {
+    sourceError = error;
+  }
+
+  // Older deployments of the API did not understand the source parameter and
+  // silently returned VidFast. Build alternate-provider URLs here as a
+  // compatibility path so the dropdown always uses the selected source.
+  if (source !== "vidfast" && sourceError?.status !== 401) {
+    try {
+      return await buildAlternatePlaybackUrl(source, media, {
+        mediaType,
+        season,
+        episode,
+        startAt
+      });
+    } catch (error) {
+      sourceError = error;
+    }
+  }
+
+  throw sourceError;
+}
+
+function playbackUrlMatchesSource(url, sourceId) {
+  const expectedHosts = {
+    vidfast: "vidfast.vc",
+    vidnest: "vidnest.fun",
+    vidsrc: "vidsrc.tw"
+  };
+  const expectedHost = expectedHosts[sourceId];
+  if (!expectedHost) return false;
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return hostname === expectedHost || hostname.endsWith(`.${expectedHost}`);
+  } catch {
+    return false;
+  }
+}
+
+async function resolvePlaybackTmdbId(imdbId, mediaType) {
+  const cacheKey = `${mediaType}:${imdbId}`;
+  if (playbackTmdbIdCache.has(cacheKey)) return playbackTmdbIdCache.get(cacheKey);
+
+  const property = mediaType === "movie" ? "P4947" : "P4983";
+  const query = `SELECT ?tmdb WHERE { ?item wdt:P345 "${imdbId}"; wdt:${property} ?tmdb. } LIMIT 1`;
+  const params = new URLSearchParams({ query, format: "json", origin: "*" });
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const response = await fetch(`https://query.wikidata.org/sparql?${params.toString()}`, {
+      headers: { Accept: "application/sparql-results+json" },
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error(`The VidNest ID lookup returned HTTP ${response.status}.`);
+
+    const payload = await response.json();
+    const tmdbId = String(payload?.results?.bindings?.[0]?.tmdb?.value || "");
+    if (!/^[1-9]\d*$/.test(tmdbId)) {
+      throw new Error("VidNest does not have an ID mapping for this title. Try another source.");
+    }
+
+    playbackTmdbIdCache.set(cacheKey, tmdbId);
+    return tmdbId;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("The VidNest ID lookup timed out. Try another source.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+async function buildVidNestPlaybackUrl(media, { mediaType, season, episode, startAt }) {
+  const imdbId = getImdbId(media);
+  if (!/^tt\d+$/i.test(imdbId)) throw new Error("This title has no valid IMDb identifier.");
+
+  const tmdbId = await resolvePlaybackTmdbId(imdbId, mediaType);
+  const params = new URLSearchParams();
+  const resumeAt = Math.max(0, Math.floor(Number(startAt) || 0));
+  if (resumeAt >= 5) {
+    params.set(mediaType === "movie" ? "startAt" : "progress", String(resumeAt));
+  }
+
+  const path = mediaType === "movie"
+    ? `movie/${tmdbId}`
+    : `tv/${tmdbId}/${season}/${episode}`;
+  const query = params.toString();
+  return `https://vidnest.fun/${path}${query ? `?${query}` : ""}`;
+}
+
+function buildVidSrcPlaybackUrl(media, { mediaType, season, episode, startAt }) {
+  const imdbId = getImdbId(media);
+  if (!/^tt\d+$/i.test(imdbId)) throw new Error("This title has no valid IMDb identifier.");
+
+  const params = new URLSearchParams({ autoplay: "1" });
+  const resumeAt = Math.max(0, Math.floor(Number(startAt) || 0));
+  if (resumeAt >= 5) params.set("startAt", String(resumeAt));
+  if (mediaType === "tv") params.set("autonext", "1");
+
+  const path = mediaType === "movie"
+    ? `movie/${encodeURIComponent(imdbId)}`
+    : `tv/${encodeURIComponent(imdbId)}/${season}/${episode}`;
+  return `https://vidsrc.tw/embed/${path}?${params.toString()}`;
+}
+
+function buildAlternatePlaybackUrl(source, media, playback) {
+  if (source === "vidnest") return buildVidNestPlaybackUrl(media, playback);
+  if (source === "vidsrc") return buildVidSrcPlaybackUrl(media, playback);
+  throw new Error("That playback source is not supported.");
+}
+
+function orderedPlaybackSources(firstSource = state.playbackSource) {
+  const startIndex = Math.max(0, PLAYBACK_SOURCES.findIndex(source => source.id === firstSource));
+  return PLAYBACK_SOURCES.map((_, offset) =>
+    PLAYBACK_SOURCES[(startIndex + offset) % PLAYBACK_SOURCES.length].id
+  );
+}
+
+async function getPlaybackUrlWithTimeout(media, playback) {
+  if (!state.autoSwitchPlaybackSource) return getPlaybackUrl(media, playback);
+  let timeoutId = null;
+  try {
+    return await Promise.race([
+      getPlaybackUrl(media, playback),
+      new Promise((_, reject) => {
+        timeoutId = window.setTimeout(
+          () => reject(new Error("Playback source took too long to load.")),
+          PLAYBACK_LOAD_TIMEOUT_MS
+        );
+      })
+    ]);
+  } finally {
+    if (timeoutId !== null) window.clearTimeout(timeoutId);
+  }
+}
+
+async function resolveInitialPlayback(media, playback) {
+  let lastError = null;
+  const attemptedSources = [];
+  const sources = state.autoSwitchPlaybackSource
+    ? orderedPlaybackSources()
+    : [state.playbackSource];
+
+  for (const source of sources) {
+    attemptedSources.push(source);
+    try {
+      const url = await getPlaybackUrlWithTimeout(media, { ...playback, source });
+      return { url, source, attemptedSources };
+    } catch (error) {
+      if (error?.status === 401) throw error;
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("No playback source is available right now.");
+}
+
+function cancelPlayerLoadWatchdog() {
+  if (playerLoadTimeoutId !== null) {
+    window.clearTimeout(playerLoadTimeoutId);
+    playerLoadTimeoutId = null;
+  }
+}
+
+function armPlayerLoadWatchdog(active = state.activePlayback, sourceId = active?.source) {
+  if (!active || !sourceId || !state.autoSwitchPlaybackSource) {
+    cancelPlayerLoadWatchdog();
+    return;
+  }
+  cancelPlayerLoadWatchdog();
+  playerLoadTimeoutId = window.setTimeout(() => {
+    playerLoadTimeoutId = null;
+    if (state.activePlayback === active && active.source === sourceId) {
+      void switchToNextPlaybackSource();
+    }
+  }, PLAYBACK_LOAD_TIMEOUT_MS);
+}
+
+function setPlayerFrameSource(url, sourceId) {
+  const active = state.activePlayback;
+  if (!active) return;
+  active.attemptedSources.add(sourceId);
+  active.lastProviderProgress = null;
+  playerFrame.removeAttribute("sandbox");
+  playerFrame.src = url;
+  armPlayerLoadWatchdog(active, sourceId);
+}
+
+function updatePlayerPlaybackWatchdog(eventName, currentTime) {
+  const active = state.activePlayback;
+  if (!active) return;
+
+  const normalizedEvent = String(eventName || "").toLowerCase();
+  if (["pause", "paused", "ended", "completed"].includes(normalizedEvent)) {
+    cancelPlayerLoadWatchdog();
+    return;
+  }
+
+  if (!["play", "playing", "timeupdate", "playerstatus", "seeked"].includes(normalizedEvent) ||
+      !Number.isFinite(currentTime)) {
+    return;
+  }
+
+  const previousProgress = active.lastProviderProgress;
+  const progressAdvanced = !Number.isFinite(previousProgress) ||
+    currentTime > previousProgress + 0.1 ||
+    (normalizedEvent === "seeked" && Math.abs(currentTime - previousProgress) > 0.1);
+
+  // A loaded iframe is not enough: only advancing video time proves the
+  // stream is healthy. If progress stops, the existing five-second timer is
+  // allowed to expire and the next source is tried.
+  if (progressAdvanced) {
+    active.lastProviderProgress = currentTime;
+    armPlayerLoadWatchdog(active, active.source);
+  }
+}
+
+async function switchToNextPlaybackSource() {
+  const active = state.activePlayback;
+  if (!active || active.sourceSwitching || !state.autoSwitchPlaybackSource) return;
+
+  const nextSource = orderedPlaybackSources(active.source)
+    .slice(1)
+    .find(source => !active.attemptedSources.has(source));
+  if (!nextSource) return;
+
+  active.sourceSwitching = true;
+  active.attemptedSources.add(nextSource);
+  const saved = getSavedPlayback(getImdbId(active.media));
+  const sameEpisode = active.mediaType === "movie" || (
+    Number(saved?.season) === Number(active.season) &&
+    Number(saved?.episode) === Number(active.episode)
+  );
+  const startAt = sameEpisode ? Number(saved?.currentTime) || 0 : 0;
+
+  try {
+    const url = await getPlaybackUrlWithTimeout(active.media, {
+      mediaType: active.mediaType,
+      season: active.season,
+      episode: active.episode,
+      startAt,
+      source: nextSource
+    });
+    if (state.activePlayback !== active) return;
+    active.source = nextSource;
+    setPlayerFrameSource(url, nextSource);
+  } catch (error) {
+    if (error?.status === 401) {
+      closePlayer();
+      clearAuthSession();
+      openAuthModal("signin");
+      return;
+    }
+    console.warn(`Playback source ${nextSource} could not be loaded`, error);
+  } finally {
+    active.sourceSwitching = false;
+  }
+
+  if (state.activePlayback === active && active.source !== nextSource) {
+    void switchToNextPlaybackSource();
+  }
 }
 
 function launchPlayer(media, url, subtitle, playbackState) {
   heroTrailerCommand("pauseVideo");
-  state.activePlayback = { media, ...playbackState };
+  const source = isValidPlaybackSource(playbackState?.source)
+    ? playbackState.source
+    : state.playbackSource;
+  state.activePlayback = {
+    media,
+    ...playbackState,
+    source,
+    attemptedSources: new Set(playbackState?.attemptedSources || [source]),
+    sourceSwitching: false
+  };
   state.lastProgressWrite = 0;
   state.pendingEpisodeAdvance = false;
   state.episodeAdvanceInFlight = false;
@@ -3710,16 +4169,16 @@ function launchPlayer(media, url, subtitle, playbackState) {
 
   // Movies and TV must not be sandboxed: the playback provider rejects
   // sandboxed embeds ("Please Disable Sandbox").
-  playerFrame.removeAttribute("sandbox");
-  playerFrame.src = url;
   playerScreen.classList.add("open");
   playerScreen.setAttribute("aria-hidden", "false");
   document.body.style.overflow = "hidden";
+  setPlayerFrameSource(url, source);
 }
 
 function getEpisodeFromPlayerMessage(message) {
   const candidates = [
     message?.data,
+    message?.data?.player_info,
     message?.data?.media,
     message?.data?.metadata,
     message?.media,
@@ -3744,6 +4203,38 @@ function getEpisodeFromPlayerMessage(message) {
   }
 
   return null;
+}
+
+async function restorePreferredSourceForEpisode(active, season, episode) {
+  const preferredSource = state.playbackSource;
+  if (!isValidPlaybackSource(preferredSource) || active.source === preferredSource ||
+      active.sourceSwitching) {
+    return;
+  }
+
+  active.sourceSwitching = true;
+  cancelPlayerLoadWatchdog();
+  try {
+    const url = await getPlaybackUrlWithTimeout(active.media, {
+      mediaType: "tv",
+      season,
+      episode,
+      startAt: 0,
+      source: preferredSource
+    });
+    if (state.activePlayback !== active ||
+        Number(active.season) !== season || Number(active.episode) !== episode) {
+      return;
+    }
+
+    active.source = preferredSource;
+    active.attemptedSources = new Set([preferredSource]);
+    setPlayerFrameSource(url, preferredSource);
+  } catch (error) {
+    console.warn(`Could not restore preferred source ${preferredSource} for the next episode`, error);
+  } finally {
+    active.sourceSwitching = false;
+  }
 }
 
 function syncActiveTvEpisode(season, episode) {
@@ -3822,6 +4313,10 @@ function syncActiveTvEpisode(season, episode) {
     );
   }
 
+  // A fallback is temporary. Every new episode begins again with the source
+  // selected in Account settings, and may fall through the list independently.
+  void restorePreferredSourceForEpisode(active, season, episode);
+
   return true;
 }
 
@@ -3898,8 +4393,8 @@ async function openEpisode(show, season, episode, options = {}) {
     : isSameEpisode ? Number(existing?.currentTime) || 0 : 0;
 
   try {
-    const [playbackUrl, episodeData] = await Promise.all([
-      getPlaybackUrl(show, {
+    const [playback, episodeData] = await Promise.all([
+      resolveInitialPlayback(show, {
         mediaType: "tv",
         season: Number(season),
         episode: Number(episode),
@@ -3921,11 +4416,17 @@ async function openEpisode(show, season, episode, options = {}) {
 
     launchPlayer(
       show,
-      playbackUrl,
+      playback.url,
       `Season ${season} · Episode ${episode}` +
         (episodeName ? ` · ${episodeName}` : "") +
         (startAt >= 5 ? ` · Resuming at ${formatWatchTime(startAt)}` : ""),
-      { mediaType: "tv", season: Number(season), episode: Number(episode) }
+      {
+        mediaType: "tv",
+        season: Number(season),
+        episode: Number(episode),
+        source: playback.source,
+        attemptedSources: playback.attemptedSources
+      }
     );
 
     history.pushState(
@@ -4086,7 +4587,7 @@ async function openMovie(movie, options = {}) {
     : existing?.mediaType === "movie" ? Number(existing.currentTime) || 0 : 0;
 
   try {
-    const playbackUrl = await getPlaybackUrl(movie, { mediaType: "movie", startAt });
+    const playback = await resolveInitialPlayback(movie, { mediaType: "movie", startAt });
 
     const watchEntry = makeWatchEntry(movie, { mediaType: "movie" },
       existing?.mediaType === "movie" ? existing : null);
@@ -4095,9 +4596,15 @@ async function openMovie(movie, options = {}) {
 
     launchPlayer(
       movie,
-      playbackUrl,
+      playback.url,
       "Movie" + (startAt >= 5 ? ` · Resuming at ${formatWatchTime(startAt)}` : ""),
-      { mediaType: "movie", season: null, episode: null }
+      {
+        mediaType: "movie",
+        season: null,
+        episode: null,
+        source: playback.source,
+        attemptedSources: playback.attemptedSources
+      }
     );
 
     history.pushState(
@@ -4129,6 +4636,7 @@ function stopPlayerFrame() {
 
 function closePlayer({ resetRoute = true } = {}) {
   syncActivePlaybackOnExit();
+  cancelPlayerLoadWatchdog();
   playerScreen.classList.remove("open");
   playerScreen.setAttribute("aria-hidden", "true");
   stopPlayerFrame();
@@ -4345,6 +4853,8 @@ document.addEventListener("click", event => {
 
 el("closeModal").addEventListener("click", closeModal);
 el("playerBack").addEventListener("click", () => closePlayer());
+profilePlaybackSource.addEventListener("change", saveProfilePlaybackSource);
+profileSourceSwitching.addEventListener("change", saveProfileSourceSwitching);
 
 liveScheduleClose.addEventListener("click", closeLiveSchedule);
 liveScheduleWrap.addEventListener("click", event => {
@@ -4370,8 +4880,9 @@ modalWrap.addEventListener("click", event => {
 });
 
 window.addEventListener("message", event => {
-  if (!isVidFastOrigin(event.origin)) return;
+  if (!isPlaybackProviderOrigin(event.origin)) return;
   if (event.source !== playerFrame.contentWindow) return;
+  if (state.activePlayback && !playbackUrlMatchesSource(event.origin, state.activePlayback.source)) return;
 
   let message = event.data;
   if (typeof message === "string") {
@@ -4384,7 +4895,7 @@ window.addEventListener("message", event => {
 
   if (!message || typeof message !== "object") return;
 
-  // VidFast may include the current season/episode in PLAYER_EVENT or
+  // Playback providers may include the current season/episode in PLAYER_EVENT or
   // MEDIA_DATA messages. If it does, treat that as the source of truth.
   const playerEpisode = getEpisodeFromPlayerMessage(message);
   if (playerEpisode && state.activePlayback?.mediaType === "tv") {
@@ -4394,15 +4905,16 @@ window.addEventListener("message", event => {
   if (message.type !== "PLAYER_EVENT" && message.type !== "MEDIA_DATA") return;
 
   const data = message.data || message;
-  const eventName = data.event || "";
-  const currentTime = Number(data.currentTime);
-  const duration = Number(data.duration);
+  const eventName = data.event || (data.player_status === "completed" ? "ended" : data.player_status) || "";
+  const currentTime = Number(data.currentTime ?? data.player_progress);
+  const duration = Number(data.duration ?? data.player_duration);
   const hasPlaybackTime =
     Number.isFinite(currentTime) || Number.isFinite(duration);
+  updatePlayerPlaybackWatchdog(eventName, currentTime);
 
   if (message.type === "PLAYER_EVENT" && eventName === "ended" &&
       state.activePlayback?.mediaType === "tv") {
-    // Save the completed episode first, then wait for VidFast to start the
+    // Save the completed episode first, then wait for the provider to start the
     // next one. The next play/timeupdate event will move the outer app too.
     if (hasPlaybackTime) {
       updatePlaybackProgress(currentTime, duration, eventName);
@@ -4414,11 +4926,11 @@ window.addEventListener("message", event => {
   const looksLikeFreshEpisodePlayback =
     state.pendingEpisodeAdvance &&
     state.activePlayback?.mediaType === "tv" &&
-    ["play", "timeupdate", "playerstatus"].includes(eventName) &&
+    ["play", "playing", "timeupdate", "playerstatus"].includes(eventName) &&
     Number.isFinite(currentTime) && currentTime >= 0 && currentTime < 60;
 
   if (looksLikeFreshEpisodePlayback) {
-    // If VidFast did not include season/episode metadata, infer the next
+    // If the provider did not include season/episode metadata, infer the next
     // episode from TVMaze only after the new video actually begins.
     syncToNextEpisodeAfterPlayerAdvance(currentTime, duration, eventName);
     return;

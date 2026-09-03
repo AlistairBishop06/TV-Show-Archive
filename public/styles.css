@@ -873,6 +873,7 @@ select {
 
 .player-meta {
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .player-warning {
@@ -918,6 +919,9 @@ select {
   .app-shell { width: min(100% - 22px, 1500px); }
   .topbar { align-items: stretch; flex-direction: column; gap: 12px; }
   .search { max-width: none; width: 100%; }
+  .player-topbar { flex-wrap: wrap; gap: 8px 10px; }
+  .player-meta { order: 3; flex: 1 1 150px; }
+  .player-warning { order: 4; }
   .player-warning { width: min(112px, 30vw); max-height: 42px; }
   .hero { min-height: 350px; border-radius: 21px; }
   .hero-content { min-height: 350px; padding: 28px 24px; }
@@ -2633,6 +2637,36 @@ select:focus {
 }
 
 .profile-form-message.success { color: #8ad49f; }
+
+.playback-settings-field {
+  display: grid;
+  max-width: 420px;
+  gap: 7px;
+  color: #b9bac1;
+  font-size: .78rem;
+  font-weight: 720;
+}
+.playback-settings-field + .playback-settings-field { margin-top: 14px; }
+
+.playback-settings-field select {
+  width: 100%;
+  padding: 12px 38px 12px 13px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 10px;
+  outline: none;
+  background: #17181d;
+  color: #f5f5f7;
+  font: inherit;
+  cursor: pointer;
+}
+
+.playback-settings-field select:focus {
+  border-color: rgba(238,223,53,.70);
+  box-shadow: 0 0 0 3px rgba(238,223,53,.09);
+}
+
+.playback-settings-field select:disabled { opacity: .6; cursor: wait; }
+.playback-settings-note { max-width: 620px; margin: 11px 0 3px; color: var(--muted); font-size: .78rem; line-height: 1.55; }
 
 .profile-signout-card {
   display: flex;

@@ -10,6 +10,7 @@ const SESSION_DAYS = 30;
 const MAX_WATCH_HISTORY = 40;
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_MAX_ATTEMPTS = 20;
+const PLAYBACK_SOURCE_IDS = new Set(["vidfast", "vidnest", "vidsrc"]);
 
 if (!DATABASE_URL) {
   throw new Error("Missing DATABASE_URL. Add DATABASE_URL in Vercel Project Settings → Environment Variables.");
@@ -20,6 +21,7 @@ const scryptAsync = promisify(crypto.scrypt);
 const app = express();
 const authAttempts = new Map();
 const liveSportsScheduleCache = new Map();
+const tmdbIdCache = new Map();
 const LIVE_SPORTS_SCHEDULE_CACHE_MS = 10 * 60 * 1000;
 const DLSTREAMS_SCHEDULE_CACHE_MS = 5 * 60 * 1000;
 let dlstreamsScheduleCache = null;
@@ -179,7 +181,8 @@ async function requireAuth(req, res, next) {
 
     const tokenHash = sessionHash(token);
     const rows = await sql`
-      SELECT u.id, u.username, u.created_at, u.profile_picture, s.token_hash
+      SELECT u.id, u.username, u.created_at, u.profile_picture, u.playback_source,
+             u.auto_switch_source, s.token_hash
       FROM sessions s
       JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ${tokenHash}
@@ -194,7 +197,9 @@ async function requireAuth(req, res, next) {
       id: row.id,
       username: row.username,
       created_at: row.created_at,
-      profile_picture: row.profile_picture || ""
+      profile_picture: row.profile_picture || "",
+      playback_source: PLAYBACK_SOURCE_IDS.has(row.playback_source) ? row.playback_source : "vidfast",
+      auto_switch_source: row.auto_switch_source !== false
     };
     req.sessionTokenHash = row.token_hash;
     next();
@@ -208,7 +213,11 @@ function serialiseUser(user) {
     id: user.id,
     username: user.username,
     createdAt: user.created_at || user.createdAt || null,
-    profilePicture: user.profile_picture || user.profilePicture || ""
+    profilePicture: user.profile_picture || user.profilePicture || "",
+    playbackSource: PLAYBACK_SOURCE_IDS.has(user.playback_source || user.playbackSource)
+      ? (user.playback_source || user.playbackSource)
+      : "vidfast",
+    autoSwitchPlaybackSource: (user.auto_switch_source ?? user.autoSwitchPlaybackSource) !== false
   };
 }
 
@@ -476,6 +485,8 @@ async function ensureSchema() {
   await sql`ALTER TABLE users DROP COLUMN IF EXISTS email`;
   await sql`ALTER TABLE users DROP COLUMN IF EXISTS display_name`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture text NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS playback_source text NOT NULL DEFAULT 'vidfast'`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_switch_source boolean NOT NULL DEFAULT true`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -763,7 +774,7 @@ app.post("/api/auth/register", authRateLimit, async (req, res, next) => {
       const createdRows = await sql`
         INSERT INTO users (id, username, password_hash)
         VALUES (${userId}, ${username}, ${passwordHash})
-        RETURNING id, username, created_at, profile_picture
+        RETURNING id, username, created_at, profile_picture, playback_source, auto_switch_source
       `;
       createdUser = createdRows[0];
     } catch (error) {
@@ -787,7 +798,7 @@ app.post("/api/auth/login", authRateLimit, async (req, res, next) => {
     const password = String(req.body?.password ?? "");
 
     const rows = await sql`
-      SELECT id, username, password_hash, created_at, profile_picture
+      SELECT id, username, password_hash, created_at, profile_picture, playback_source, auto_switch_source
       FROM users
       WHERE lower(username) = ${username}
       LIMIT 1
@@ -849,7 +860,7 @@ app.patch("/api/account/username", authRateLimit, requireAuth, async (req, res, 
         UPDATE users
         SET username = ${username}, updated_at = now()
         WHERE id = ${req.user.id}
-        RETURNING id, username, created_at, profile_picture
+        RETURNING id, username, created_at, profile_picture, playback_source, auto_switch_source
       `;
       res.json({ user: serialiseUser(updated[0]) });
     } catch (error) {
@@ -906,6 +917,43 @@ app.patch("/api/account/password", authRateLimit, requireAuth, async (req, res, 
   }
 });
 
+app.patch("/api/account/playback-source", requireAuth, async (req, res, next) => {
+  try {
+    const source = String(req.body?.source || "").trim().toLowerCase();
+    if (!PLAYBACK_SOURCE_IDS.has(source)) {
+      return res.status(400).json({ error: "Choose a valid playback source." });
+    }
+
+    const rows = await sql`
+      UPDATE users
+      SET playback_source = ${source}, updated_at = now()
+      WHERE id = ${req.user.id}
+      RETURNING id, username, created_at, profile_picture, playback_source, auto_switch_source
+    `;
+    res.json({ user: serialiseUser(rows[0]) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/account/source-switching", requireAuth, async (req, res, next) => {
+  try {
+    if (typeof req.body?.enabled !== "boolean") {
+      return res.status(400).json({ error: "Choose a valid source-switching mode." });
+    }
+
+    const rows = await sql`
+      UPDATE users
+      SET auto_switch_source = ${req.body.enabled}, updated_at = now()
+      WHERE id = ${req.user.id}
+      RETURNING id, username, created_at, profile_picture, playback_source, auto_switch_source
+    `;
+    res.json({ user: serialiseUser(rows[0]) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.patch("/api/account/profile-picture", requireAuth, async (req, res, next) => {
   try {
     const imageData = String(req.body?.imageData || "");
@@ -921,7 +969,7 @@ app.patch("/api/account/profile-picture", requireAuth, async (req, res, next) =>
       UPDATE users
       SET profile_picture = ${imageData}, updated_at = now()
       WHERE id = ${req.user.id}
-      RETURNING id, username, created_at, profile_picture
+      RETURNING id, username, created_at, profile_picture, playback_source, auto_switch_source
     `;
     res.json({ user: serialiseUser(rows[0]) });
   } catch (error) {
@@ -1094,33 +1142,91 @@ app.delete("/api/lists/:listId/items/:imdbId", requireAuth, async (req, res, nex
   } catch (error) { next(error); }
 });
 
-app.get("/api/playback-url", requireAuth, (req, res) => {
+async function resolveTmdbId(imdbId, mediaType) {
+  const cacheKey = `${mediaType}:${imdbId}`;
+  if (tmdbIdCache.has(cacheKey)) return tmdbIdCache.get(cacheKey);
+
+  const property = mediaType === "movie" ? "P4947" : "P4983";
+  const query = `SELECT ?tmdb WHERE { ?item wdt:P345 "${imdbId}"; wdt:${property} ?tmdb. } LIMIT 1`;
+  const params = new URLSearchParams({ query, format: "json" });
+  const response = await fetch(`https://query.wikidata.org/sparql?${params.toString()}`, {
+    headers: {
+      Accept: "application/sparql-results+json",
+      "User-Agent": "TVArchive/1.0 (playback ID resolver)"
+    },
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!response.ok) throw new Error(`Wikidata returned HTTP ${response.status}.`);
+
+  const payload = await response.json();
+  const tmdbId = String(payload?.results?.bindings?.[0]?.tmdb?.value || "");
+  if (!/^[1-9]\d*$/.test(tmdbId)) {
+    const error = new Error("A TMDB mapping is not available for this title.");
+    error.status = 404;
+    throw error;
+  }
+
+  tmdbIdCache.set(cacheKey, tmdbId);
+  return tmdbId;
+}
+
+app.get("/api/playback-url", requireAuth, async (req, res) => {
   const mediaType = req.query.type === "movie" ? "movie" : "tv";
   const imdbId = cleanText(req.query.imdbId, 64);
   const startAt = Math.max(0, Math.floor(finiteNumber(req.query.startAt, 0)));
+  const source = PLAYBACK_SOURCE_IDS.has(req.query.source)
+    ? req.query.source
+    : "vidfast";
 
   if (!/^tt\d+$/i.test(imdbId)) {
     return res.status(400).json({ error: "Invalid IMDb identifier." });
   }
 
-  const params = new URLSearchParams({ autoPlay: "true" });
-  if (startAt >= 5) params.set("startAt", String(startAt));
-
-  if (mediaType === "movie") {
-    return res.json({
-      url: `https://vidfast.vc/movie/${encodeURIComponent(imdbId)}?${params.toString()}`
-    });
-  }
-
   const season = nullableInteger(req.query.season);
   const episode = nullableInteger(req.query.episode);
-  if (!season || season < 1 || !episode || episode < 1) {
+  if (mediaType === "tv" && (!season || season < 1 || !episode || episode < 1)) {
     return res.status(400).json({ error: "A valid season and episode are required." });
   }
 
-  res.json({
-    url: `https://vidfast.vc/tv/${encodeURIComponent(imdbId)}/${season}/${episode}?${params.toString()}`
-  });
+  try {
+    if (source === "vidnest") {
+      const tmdbId = await resolveTmdbId(imdbId, mediaType);
+      const params = new URLSearchParams();
+      if (startAt >= 5) {
+        params.set(mediaType === "movie" ? "startAt" : "progress", String(startAt));
+      }
+      const path = mediaType === "movie"
+        ? `movie/${tmdbId}`
+        : `tv/${tmdbId}/${season}/${episode}`;
+      const query = params.toString();
+      return res.json({ source, url: `https://vidnest.fun/${path}${query ? `?${query}` : ""}` });
+    }
+
+    if (source === "vidsrc") {
+      const params = new URLSearchParams({ autoplay: "1" });
+      if (startAt >= 5) params.set("startAt", String(startAt));
+      if (mediaType === "tv") params.set("autonext", "1");
+      const path = mediaType === "movie"
+        ? `movie/${encodeURIComponent(imdbId)}`
+        : `tv/${encodeURIComponent(imdbId)}/${season}/${episode}`;
+      return res.json({ source, url: `https://vidsrc.tw/embed/${path}?${params.toString()}` });
+    }
+
+    const params = new URLSearchParams({ autoPlay: "true" });
+    if (startAt >= 5) params.set("startAt", String(startAt));
+    const path = mediaType === "movie"
+      ? `movie/${encodeURIComponent(imdbId)}`
+      : `tv/${encodeURIComponent(imdbId)}/${season}/${episode}`;
+    return res.json({ source, url: `https://vidfast.vc/${path}?${params.toString()}` });
+  } catch (error) {
+    console.error(`Playback source ${source} failed`, error);
+    const status = Number(error?.status) === 404 ? 404 : 502;
+    return res.status(status).json({
+      error: status === 404
+        ? "VidNest does not have an ID mapping for this title. Try another source."
+        : `${source === "vidnest" ? "VidNest" : "The selected source"} is unavailable right now. Try another source.`
+    });
+  }
 });
 
 app.get("/api/watch-history", requireAuth, async (req, res, next) => {

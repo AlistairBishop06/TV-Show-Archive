@@ -3,11 +3,15 @@ CREATE TABLE IF NOT EXISTS users (
   username text NOT NULL UNIQUE,
   password_hash text NOT NULL,
   profile_picture text NOT NULL DEFAULT '',
+  playback_source text NOT NULL DEFAULT 'vidfast',
+  auto_switch_source boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture text NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS playback_source text NOT NULL DEFAULT 'vidfast';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_switch_source boolean NOT NULL DEFAULT true;
 
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_unique
   ON users (lower(username));

@@ -92,3 +92,28 @@ CREATE TABLE IF NOT EXISTS list_items (
 );
 
 CREATE INDEX IF NOT EXISTS list_items_list_added_idx ON list_items(list_id, added_at DESC);
+
+CREATE TABLE IF NOT EXISTS media_comments (
+  id uuid PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  imdb_id text NOT NULL,
+  media_name text NOT NULL,
+  episode_name text NOT NULL DEFAULT '',
+  comment_scope text NOT NULL CHECK (comment_scope IN ('series', 'episode')),
+  season integer,
+  episode integer,
+  comment_text text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (
+    (comment_scope = 'series' AND season IS NULL AND episode IS NULL)
+    OR
+    (comment_scope = 'episode' AND season > 0 AND episode > 0)
+  )
+);
+
+CREATE INDEX IF NOT EXISTS media_comments_thread_idx
+  ON media_comments(imdb_id, comment_scope, season, episode, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS media_comments_user_idx
+  ON media_comments(user_id, created_at DESC);

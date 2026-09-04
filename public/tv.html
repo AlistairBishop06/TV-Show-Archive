@@ -3,23 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#050507" />
+  <meta name="theme-color" content="#08090c" />
   <title>TV Shows | TV Archive</title>
   <link rel="icon" type="image/png" href="./assets/tv-archive-icon.png" />
   <link rel="apple-touch-icon" href="./assets/tv-archive-icon.png" />
-  <link rel="stylesheet" href="./styles.css?v=20260903-4" />
+  <link rel="stylesheet" href="./styles.css?v=20260904-12" />
 </head>
 <body data-page="tv">
   <header>
     <div class="app-shell topbar">
       <a class="brand" href="./index.html" aria-label="TV Archive home"><img class="brand-logo" src="./assets/tv-archive-logo.png" alt="TV Archive" /></a>
 
-      <div class="type-nav" id="typeNav">
-        <a data-type="all" class="active" href="./index.html">All</a>
+      <nav class="type-nav" id="typeNav" aria-label="Primary navigation">
+        <a data-type="all" class="active" href="./index.html">Home</a>
         <a data-type="tv" href="./tv.html">TV Shows</a>
         <a data-type="movie" href="./movies.html">Movies</a>
-        <a data-type="live" href="./live.html">Live Sports</a>
-      </div>
+        <a data-type="live" href="./live.html">Live</a>
+        <a id="discoverListsTopButton" class="discover-nav-link" href="./discover.html" aria-label="Discover public lists">Lists</a>
+      </nav>
 
       <div class="search">
         <svg class="icon search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -27,9 +28,6 @@
       </div>
 
       <img class="navbar-warning" src="./assets/warning.png" alt="Please use an ad blocker. This site has no ads, but streamed sources may contain ads." />
-
-      <a id="discoverListsTopButton" class="discover-nav-link" href="./discover.html" aria-label="Discover public lists">Discover Lists</a>
-
 
       <div class="account-area">
         <button id="accountButton" class="account-button" type="button" aria-haspopup="true" aria-expanded="false">
@@ -199,9 +197,11 @@
       <div class="hero-content">
         <div id="heroEyebrow" class="eyebrow">Featured</div>
         <h1 id="heroTitle"></h1>
+        <div id="heroMeta" class="hero-meta" aria-label="Featured title details"></div>
         <p id="heroDescription"></p>
         <div class="button-row">
-          <button id="heroBrowse" class="btn btn-primary">Play</button>
+          <button id="heroBrowse" class="btn btn-primary" type="button">Play</button>
+          <button id="heroInfo" class="btn btn-secondary" type="button">More info</button>
         </div>
       </div>
     </section>
@@ -274,15 +274,44 @@
       <img class="player-warning" src="./assets/warning.png" alt="Please use an ad blocker. This site has no ads, but streamed sources may contain ads." />
     </div>
 
-    <div class="player-frame-wrap">
-      <iframe
-        id="playerFrame"
-        class="player-frame"
-        title="Video player"
-        allow="autoplay; fullscreen; picture-in-picture"
-        allowfullscreen
-        referrerpolicy="strict-origin-when-cross-origin"
-      ></iframe>
+    <div id="playerWatchShell" class="player-watch-shell">
+      <div class="player-main-column">
+        <div class="player-frame-wrap">
+          <iframe
+            id="playerFrame"
+            class="player-frame"
+            title="Video player"
+            allow="autoplay; fullscreen; picture-in-picture"
+            allowfullscreen
+            referrerpolicy="strict-origin-when-cross-origin"
+          ></iframe>
+        </div>
+
+        <section id="playerDetails" class="player-details" aria-labelledby="playerDetailsTitle">
+          <div class="player-details-heading"><div class="player-title-stack"><div id="playerDetailsEyebrow" class="player-details-eyebrow">Now playing</div><h1 id="playerDetailsTitle">TV Archive</h1></div><span id="playerEpisodeBadge" class="player-episode-badge" hidden></span></div>
+          <h2 id="playerEpisodeTitle" class="player-current-episode-title" hidden></h2>
+          <div id="playerDetailsMeta" class="player-details-meta"></div>
+          <p id="playerDescription"></p>
+          <div id="playerComments" class="player-comments" hidden>
+            <section class="player-comment-field"><div class="player-comment-heading"><span>Across every episode</span><label for="playerSeriesComment">Series comments</label></div><textarea id="playerSeriesComment" rows="5" maxlength="2000" placeholder="Write your thoughts about this series..."></textarea><div class="player-comment-footer"><span id="playerSeriesCommentStatus" class="player-comment-status" role="status" aria-live="polite"></span><button id="playerSeriesCommentSave" type="button">Save series comment</button></div></section>
+            <section class="player-comment-field"><div class="player-comment-heading"><span>Only this episode</span><label for="playerEpisodeComment">Episode comments</label></div><textarea id="playerEpisodeComment" rows="5" maxlength="2000" placeholder="Write your thoughts about this episode..."></textarea><div class="player-comment-footer"><span id="playerEpisodeCommentStatus" class="player-comment-status" role="status" aria-live="polite"></span><button id="playerEpisodeCommentSave" type="button">Save episode comment</button></div></section>
+          </div>
+        </section>
+      </div>
+
+      <aside id="playerEpisodeSidebar" class="player-episode-sidebar" aria-labelledby="playerEpisodeHeading" hidden>
+        <div class="player-episode-sidebar-head">
+          <div>
+            <span>Continue the series</span>
+            <h2 id="playerEpisodeHeading">Episodes</h2>
+          </div>
+          <label>
+            <span>Season</span>
+            <select id="playerSeasonSelect" aria-label="Choose season"></select>
+          </label>
+        </div>
+        <div id="playerEpisodeList" class="player-episode-list"></div>
+      </aside>
     </div>
   </section>
 
@@ -307,7 +336,7 @@
   </div>
 
   <div id="modalWrap" class="modal-wrap" aria-hidden="true">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div id="modalBanner" class="modal-banner">
         <iframe
           id="modalTrailer"
@@ -324,6 +353,7 @@
         </button>
         <div id="modalEyebrow" class="eyebrow">TV Series</div>
         <h2 id="modalTitle"></h2>
+        <div id="modalMeta" class="modal-meta"></div>
       </div>
 
       <div class="modal-content">
@@ -384,6 +414,6 @@
   </div>
 
   <script src="./config.js?v=20260826-1217"></script>
-  <script src="./app.js?v=20260903-4"></script>
+  <script src="./app.js?v=20260904-12"></script>
 </body>
 </html>

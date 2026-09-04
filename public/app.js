@@ -80,7 +80,7 @@ if (skeletonPageType === "live") {
       <div class="skeleton-block skeleton-profile-title"></div>
       <div class="skeleton-block skeleton-copy-line"></div>
       <div class="skeleton-profile-tabs">
-        ${[82, 105, 88, 78].map(width => `<div class="skeleton-block skeleton-profile-tab" style="width:${width}px"></div>`).join("")}
+        ${[82, 105, 88, 92, 78].map(width => `<div class="skeleton-block skeleton-profile-tab" style="width:${width}px"></div>`).join("")}
       </div>
       <div class="skeleton-profile-identity">
         <div class="skeleton-block skeleton-profile-avatar"></div>
@@ -120,6 +120,11 @@ function syncSkeletonTop() {
 }
 syncSkeletonTop();
 window.addEventListener("resize", syncSkeletonTop);
+const syncHeaderTone = () => {
+  document.body.classList.toggle("header-scrolled", window.scrollY > 24);
+};
+syncHeaderTone();
+window.addEventListener("scroll", syncHeaderTone, { passive: true });
 document.body.setAttribute("aria-busy", "true");
 const HERO_TRAILER_CACHE = new Map();
 let heroTrailerRequestId = 0;
@@ -128,7 +133,11 @@ let trailersMuted = true;
 let hoverTrailerCard = null;
 let hoverTrailerTimer = 0;
 let hoverTrailerRequestId = 0;
-const HOVER_TRAILER_DELAY_MS = 100;
+let playerEpisodeRequestId = 0;
+let playerCommentsRequestId = 0;
+// Keep this delay within the 400–600ms range so intentional hovers feel
+// responsive without trailers flashing while the pointer crosses a shelf.
+const HOVER_TRAILER_DELAY_MS = 500;
 const CARD_TRAILERS_ENABLED = window.matchMedia("(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)").matches;
 const hoverTrailerPreview = document.createElement("div");
 hoverTrailerPreview.className = "hover-trailer-preview";
@@ -315,7 +324,11 @@ const state = {
   discoverListItems: new Map(),
   expandedDiscoverLists: new Set(),
   modalMedia: null,
-  personalLibraryLoaded: false
+  personalLibraryLoaded: false,
+  playerComments: { series: [], episode: [] },
+  profileComments: [],
+  profileCommentsLoaded: false,
+  profileCommentsError: ""
 };
 
 // Episode metadata is cached per TVMaze show ID. Keeping it keyed by show
@@ -333,11 +346,13 @@ const discoverPageBack = el("discoverPageBack");
 const heroSection = el("heroSection");
 const heroEyebrow = el("heroEyebrow");
 const heroTitle = el("heroTitle");
+const heroMeta = el("heroMeta");
 const heroDescription = el("heroDescription");
 const heroBg = el("heroBg");
 const heroTrailer = el("heroTrailer");
 const heroSoundToggle = el("heroSoundToggle");
 const heroBrowse = el("heroBrowse");
+const heroInfo = el("heroInfo");
 const rowsContainer = el("rowsContainer");
 const searchResultsSection = el("searchResultsSection");
 const searchResultsTitle = el("searchResultsTitle");
@@ -352,6 +367,7 @@ const collectionActions = el("collectionActions");
 const collectionLoadMoreButton = el("collectionLoadMoreButton");
 const modalWrap = el("modalWrap");
 const modalTitle = el("modalTitle");
+const modalMeta = el("modalMeta");
 const modalEyebrow = el("modalEyebrow");
 const modalDescription = el("modalDescription");
 const modalBanner = el("modalBanner");
@@ -366,10 +382,54 @@ const playerScreen = el("playerScreen");
 const playerFrame = el("playerFrame");
 const playerTitle = el("playerTitle");
 const playerSubtitle = el("playerSubtitle");
+const playerWatchShell = el("playerWatchShell");
+const playerDetails = el("playerDetails");
+const playerDetailsEyebrow = el("playerDetailsEyebrow");
+const playerDetailsTitle = el("playerDetailsTitle");
+const playerEpisodeBadge = el("playerEpisodeBadge");
+const playerEpisodeTitle = el("playerEpisodeTitle");
+const playerDetailsMeta = el("playerDetailsMeta");
+const playerDescription = el("playerDescription");
+const playerComments = el("playerComments");
+const playerSeriesComment = el("playerSeriesComment");
+const playerSeriesCommentStatus = el("playerSeriesCommentStatus");
+const playerSeriesCommentSave = el("playerSeriesCommentSave");
+const playerEpisodeComment = el("playerEpisodeComment");
+const playerEpisodeCommentStatus = el("playerEpisodeCommentStatus");
+const playerEpisodeCommentSave = el("playerEpisodeCommentSave");
+const playerSeriesCommentList = document.createElement("div");
+playerSeriesCommentList.id = "playerSeriesCommentList";
+playerSeriesCommentList.className = "community-comment-list";
+playerSeriesCommentList.setAttribute("aria-live", "polite");
+playerSeriesComment?.closest(".player-comment-field")?.appendChild(playerSeriesCommentList);
+const playerEpisodeCommentList = document.createElement("div");
+playerEpisodeCommentList.id = "playerEpisodeCommentList";
+playerEpisodeCommentList.className = "community-comment-list";
+playerEpisodeCommentList.setAttribute("aria-live", "polite");
+playerEpisodeComment?.closest(".player-comment-field")?.appendChild(playerEpisodeCommentList);
+if (playerSeriesCommentSave) playerSeriesCommentSave.textContent = "Post series comment";
+if (playerEpisodeCommentSave) playerEpisodeCommentSave.textContent = "Post episode comment";
+const playerEpisodeSidebar = el("playerEpisodeSidebar");
+const playerSeasonSelect = el("playerSeasonSelect");
+const playerEpisodeList = el("playerEpisodeList");
 const loadMoreButton = el("loadMoreButton");
 const catalogueActions = el("catalogueActions");
 const continueSection = el("continueSection");
 const continueRow = el("continueRow");
+const continueScroller = document.createElement("div");
+const continueLeftArrow = document.createElement("button");
+const continueRightArrow = document.createElement("button");
+continueScroller.className = "continue-scroller";
+continueLeftArrow.className = "row-arrow row-arrow-left continue-arrow icon-btn";
+continueRightArrow.className = "row-arrow row-arrow-right continue-arrow icon-btn";
+continueLeftArrow.type = "button";
+continueRightArrow.type = "button";
+continueLeftArrow.setAttribute("aria-label", "Scroll Currently Watching left");
+continueRightArrow.setAttribute("aria-label", "Scroll Currently Watching right");
+continueLeftArrow.innerHTML = ICONS.chevronLeft;
+continueRightArrow.innerHTML = ICONS.chevronRight;
+continueRow.before(continueScroller);
+continueScroller.append(continueLeftArrow, continueRow, continueRightArrow);
 const liveSportsSection = el("liveSportsSection");
 const liveSportsContent = el("liveSportsContent");
 const liveSportsFeaturedTab = el("liveSportsFeaturedTab");
@@ -399,6 +459,31 @@ const logoutButton = el("logoutButton");
 const profileSection = el("profileSection");
 const profileBack = el("profileBack");
 const profileTabs = el("profileTabs");
+const profileCommentsTab = document.createElement("button");
+profileCommentsTab.className = "profile-tab";
+profileCommentsTab.type = "button";
+profileCommentsTab.dataset.profileTab = "comments";
+profileCommentsTab.textContent = "Comments";
+profileTabs?.insertBefore(profileCommentsTab, profileTabs.querySelector('[data-profile-tab="account"]'));
+const profileCommentsPanel = document.createElement("section");
+profileCommentsPanel.className = "profile-panel";
+profileCommentsPanel.dataset.profilePanel = "comments";
+profileCommentsPanel.innerHTML = `
+  <section class="profile-card profile-wide-card profile-comments-card">
+    <div class="profile-card-head">
+      <div>
+        <h2>Your comments</h2>
+        <p>Everything you have posted on a series or episode.</p>
+      </div>
+      <button id="profileCommentsRefresh" class="btn btn-secondary" type="button">Refresh</button>
+    </div>
+    <div id="profileCommentsList" class="profile-comments-list" aria-live="polite">
+      <div class="profile-empty">Loading comments…</div>
+    </div>
+  </section>`;
+profileSection?.insertBefore(profileCommentsPanel, profileSection.querySelector('[data-profile-panel="account"]'));
+const profileCommentsList = el("profileCommentsList");
+const profileCommentsRefresh = el("profileCommentsRefresh");
 const profileAvatar = el("profileAvatar");
 const profileUsername = el("profileUsername");
 const profileMemberSince = el("profileMemberSince");
@@ -809,7 +894,7 @@ function renderLibraryGrid(container, items, { removable = false, removeHandler 
 }
 
 function setProfileTab(tab) {
-  const target = ["overview", "watch-later", "my-lists", "account"].includes(tab) ? tab : "overview";
+  const target = ["overview", "watch-later", "my-lists", "comments", "account"].includes(tab) ? tab : "overview";
   state.profileTab = target;
   profileTabs.querySelectorAll("[data-profile-tab]").forEach(button => {
     button.classList.toggle("active", button.dataset.profileTab === target);
@@ -866,8 +951,8 @@ function renderProfilePage() {
       const progress = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
       return `
         <div class="profile-history-item" data-profile-history-id="${escapeHtml(entry.imdbId)}">
-          ${entry.poster
-            ? `<img class="profile-history-poster" src="${escapeHtml(entry.poster)}" alt="" loading="lazy" />`
+          ${(entry.backdrop || entry.poster)
+            ? `<img class="profile-history-poster" src="${escapeHtml(entry.backdrop || entry.poster)}" alt="" loading="lazy" />`
             : '<div class="profile-history-poster"></div>'}
           <div class="profile-history-copy">
             <div class="profile-history-title">${escapeHtml(entry.name || "Untitled")}</div>
@@ -889,6 +974,7 @@ function renderProfilePage() {
   renderWatchLater();
   renderMyLists();
   renderDiscoverLists();
+  renderProfileComments();
 }
 
 function renderWatchLater() {
@@ -910,6 +996,18 @@ async function removeWatchLaterItem(imdbId) {
   }
 }
 
+function listArtworkMarkup(items = [], label = "List") {
+  const artwork = items
+    .map(item => item.poster || item.backdrop || "")
+    .filter(Boolean)
+    .slice(0, 4);
+  const tiles = Array.from({ length: 4 }, (_, index) => artwork[index]
+    ? `<img src="${escapeHtml(artwork[index])}" alt="" loading="lazy" />`
+    : `<span>${index === 0 ? escapeHtml(String(label).slice(0, 1).toUpperCase() || "L") : ""}</span>`
+  ).join("");
+  return `<div class="list-artwork" aria-hidden="true">${tiles}</div>`;
+}
+
 function renderMyLists() {
   if (!myListsContainer) return;
   if (!state.userLists.length) {
@@ -919,7 +1017,14 @@ function renderMyLists() {
   myListsContainer.innerHTML = state.userLists.map(list => `
     <article class="user-list-card" data-user-list="${escapeHtml(list.id)}">
       <div class="user-list-head">
-        <div><strong>${escapeHtml(list.name)}</strong><div class="user-list-meta">${list.isPublic ? "Public" : "Private"} · ${(list.items || []).length} title${(list.items || []).length === 1 ? "" : "s"}</div></div>
+        <div class="user-list-identity">
+          ${listArtworkMarkup(list.items || [], list.name)}
+          <div class="user-list-copy">
+            <span class="list-visibility-badge ${list.isPublic ? "public" : "private"}">${list.isPublic ? "Public list" : "Private list"}</span>
+            <strong>${escapeHtml(list.name)}</strong>
+            <div class="user-list-meta">${(list.items || []).length} saved title${(list.items || []).length === 1 ? "" : "s"}</div>
+          </div>
+        </div>
         <div class="user-list-actions">
           <button type="button" data-list-rename>Rename</button>
           <button type="button" data-list-visibility>${list.isPublic ? "Make private" : "Make public"}</button>
@@ -1011,13 +1116,20 @@ function renderDiscoverLists() {
     discoverListsContainer.innerHTML = '<div class="profile-empty">No public lists have been shared yet.</div>';
     return;
   }
-  discoverListsContainer.innerHTML = state.discoverLists.map(list => `
+  discoverListsContainer.innerHTML = state.discoverLists.map((list, index) => `
     <section class="discover-list-entry${state.expandedDiscoverLists.has(String(list.id)) ? " open" : ""}" data-discover-entry="${escapeHtml(list.id)}">
       <button class="discover-list-card" type="button" data-discover-list="${escapeHtml(list.id)}"
         aria-expanded="${state.expandedDiscoverLists.has(String(list.id))}" aria-controls="discover-list-panel-${escapeHtml(list.id)}">
-        <div><strong>${escapeHtml(list.name)}</strong><div class="discover-list-meta">by ${escapeHtml(list.owner || "TV Archive user")}</div></div>
+        <div class="discover-list-leading">
+          <span class="discover-list-index">${String(index + 1).padStart(2, "0")}</span>
+          <div>
+            <span class="discover-list-kicker">Community collection</span>
+            <strong>${escapeHtml(list.name)}</strong>
+            <div class="discover-list-meta">Curated by ${escapeHtml(list.owner || "TV Archive user")}</div>
+          </div>
+        </div>
         <div class="discover-list-summary">
-          <span class="discover-list-meta">${Number(list.itemCount || 0)} title${Number(list.itemCount || 0) === 1 ? "" : "s"}</span>
+          <span class="discover-list-count"><strong>${Number(list.itemCount || 0)}</strong> title${Number(list.itemCount || 0) === 1 ? "" : "s"}</span>
           <svg class="discover-list-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
       </button>
@@ -1320,7 +1432,10 @@ async function openProfilePage() {
   renderProfilePage();
   window.scrollTo({ top: 0, behavior: "smooth" });
   try {
-    await loadPersonalLibraryData({ includeDiscover: false });
+    await Promise.all([
+      loadPersonalLibraryData({ includeDiscover: false }),
+      loadProfileComments()
+    ]);
     state.personalLibraryLoaded = true;
     renderProfilePage();
   } catch (error) {
@@ -1491,6 +1606,10 @@ function setAccountUser(user, { persist = true } = {}) {
     state.userLists = [];
     state.discoverLists = [];
     state.personalLibraryLoaded = false;
+    state.playerComments = { series: [], episode: [] };
+    state.profileComments = [];
+    state.profileCommentsLoaded = false;
+    state.profileCommentsError = "";
     accountAvatar.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>';
     accountLabel.textContent = "Sign in";
     accountButton.setAttribute("aria-label", "Sign in to TV Archive");
@@ -1512,11 +1631,29 @@ function setAccountUser(user, { persist = true } = {}) {
   saveSourceSwitchingPreference(accountSourceSwitching, state.user.id);
   if (persist) cacheAccountUser(state.user);
 
+  const refreshCommentAuthor = comment => String(comment.author?.id) === String(state.user.id)
+    ? {
+        ...comment,
+        author: {
+          ...comment.author,
+          username: state.user.username,
+          profilePicture: state.user.profilePicture || ""
+        }
+      }
+    : comment;
+  state.playerComments.series = state.playerComments.series.map(refreshCommentAuthor);
+  state.playerComments.episode = state.playerComments.episode.map(refreshCommentAuthor);
+  state.profileComments = state.profileComments.map(refreshCommentAuthor);
+
   if (previousUserId && String(previousUserId) !== String(state.user.id)) {
     state.watchLater = [];
     state.userLists = [];
     state.discoverLists = [];
     state.personalLibraryLoaded = false;
+    state.playerComments = { series: [], episode: [] };
+    state.profileComments = [];
+    state.profileCommentsLoaded = false;
+    state.profileCommentsError = "";
   }
   const label = state.user.username || "Account";
   renderAvatar(accountAvatar, state.user, `${label} profile picture`);
@@ -2034,6 +2171,21 @@ async function refreshContinueEpisodeNames(history) {
   if (changed) renderContinueWatching();
 }
 
+function updateContinueArrows() {
+  const maxScroll = Math.max(0, continueRow.scrollWidth - continueRow.clientWidth);
+  continueScroller.classList.toggle("can-scroll-left", continueRow.scrollLeft > 4);
+  continueScroller.classList.toggle("can-scroll-right", continueRow.scrollLeft < maxScroll - 4);
+}
+
+continueLeftArrow.addEventListener("click", () => {
+  continueRow.scrollBy({ left: -continueRow.clientWidth * .85, behavior: "smooth" });
+});
+continueRightArrow.addEventListener("click", () => {
+  continueRow.scrollBy({ left: continueRow.clientWidth * .85, behavior: "smooth" });
+});
+continueRow.addEventListener("scroll", updateContinueArrows, { passive: true });
+window.addEventListener("resize", updateContinueArrows);
+
 function renderContinueWatching() {
   const history = getWatchHistory()
     .sort((a, b) => (b.lastWatched || 0) - (a.lastWatched || 0))
@@ -2042,6 +2194,7 @@ function renderContinueWatching() {
   if (!history.length) {
     continueSection.classList.remove("visible");
     continueRow.innerHTML = "";
+    updateContinueArrows();
     return;
   }
 
@@ -2054,7 +2207,7 @@ function renderContinueWatching() {
       : 0;
 
     const timeLabel = duration > 0
-      ? `${formatWatchTime(current)} / ${formatWatchTime(duration)} · ${Math.round(percentage)}%`
+      ? `${formatWatchTime(Math.max(0, duration - current))} left`
       : current > 0
         ? `${formatWatchTime(current)} watched`
         : "Started";
@@ -2064,9 +2217,12 @@ function renderContinueWatching() {
       : `S${entry.season} E${entry.episode}` +
         (entry.episodeName ? ` · ${entry.episodeName}` : "");
 
-    const poster = entry.poster
-      ? `<img src="${escapeHtml(entry.poster)}" alt="${escapeHtml(entry.name)} poster">`
+    const artwork = entry.backdrop || entry.poster;
+    const poster = artwork
+      ? `<img src="${escapeHtml(artwork)}" alt="${escapeHtml(entry.name)} artwork">`
       : `<div class="continue-fallback">${escapeHtml(entry.name)}</div>`;
+    const detailsLabel = entry.mediaType === "movie" ? "Details" : "All episodes";
+    const typeLabel = entry.mediaType === "movie" ? "Movie" : "TV";
 
     return `
       <article class="continue-card" data-history-index="${index}" tabindex="0" role="button"
@@ -2078,15 +2234,29 @@ function renderContinueWatching() {
           aria-label="Remove ${escapeHtml(entry.name)} from Currently Watching"
           title="Remove from Currently Watching"
         >${ICONS.close}</button>
-        <div class="continue-poster">${poster}</div>
+        <div class="continue-poster">
+          ${poster}
+          <span class="continue-type-badge">${typeLabel}</span>
+        </div>
         <div class="continue-body">
+          <div class="continue-kicker">Continue watching</div>
           <div class="continue-title">${escapeHtml(entry.name)}</div>
           <div class="continue-episode">${escapeHtml(detailLabel)}</div>
-          <div class="continue-time">${escapeHtml(timeLabel)}</div>
+          <div class="continue-progress-meta">
+            <span>${escapeHtml(timeLabel)}</span>
+            ${duration > 0 ? `<strong>${Math.round(percentage)}%</strong>` : ""}
+          </div>
           <div class="progress-track" aria-hidden="true">
             <div class="progress-fill" style="width:${percentage}%"></div>
           </div>
-          <div class="resume-label">${ICONS.play}Resume</div>
+          <div class="continue-actions">
+            <span class="resume-label">${ICONS.play}Resume</span>
+            <button class="continue-details" type="button" data-details-index="${index}"
+              aria-label="${escapeHtml(detailsLabel)} for ${escapeHtml(entry.name)}">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+              ${detailsLabel}
+            </button>
+          </div>
         </div>
       </article>
     `;
@@ -2098,6 +2268,16 @@ function renderContinueWatching() {
     button.addEventListener("click", event => {
       event.stopPropagation();
       removeWatchEntry(history[Number(button.dataset.removeIndex)]);
+    });
+    button.addEventListener("keydown", event => event.stopPropagation());
+  });
+
+  continueRow.querySelectorAll(".continue-details").forEach(button => {
+    button.addEventListener("click", event => {
+      event.stopPropagation();
+      const entry = history[Number(button.dataset.detailsIndex)];
+      stopHoverTrailer(button.closest(".continue-card"));
+      void openHistoryEntryDetails(entry);
     });
     button.addEventListener("keydown", event => event.stopPropagation());
   });
@@ -2115,38 +2295,74 @@ function renderContinueWatching() {
         resume();
       }
     });
-    if (entry) bindHoverTrailer(card, entry);
   });
+  window.requestAnimationFrame(updateContinueArrows);
 }
 
-function resumeHistoryEntry(entry) {
-  if (!entry?.imdbId) return;
-
-  if (entry.mediaType === "movie") {
-    const movie = {
+function mediaFromHistoryEntry(entry) {
+  if (entry?.mediaType === "movie") {
+    return {
       mediaType: "movie",
       imdbId: entry.imdbId,
+      id: entry.imdbId,
       name: entry.name,
       year: entry.year || "",
       poster: entry.poster || "",
       backdrop: entry.backdrop || entry.poster || "",
       summary: entry.summary || ""
     };
+  }
+
+  return {
+    mediaType: "tv",
+    id: Number(entry?.showId || 0) || null,
+    name: entry?.name || "Untitled",
+    summary: entry?.summary || "",
+    premiered: entry?.year ? `${entry.year}-01-01` : "",
+    externals: { imdb: entry?.imdbId || "" },
+    image: {
+      medium: entry?.poster || "",
+      original: entry?.backdrop || entry?.poster || ""
+    }
+  };
+}
+
+async function openHistoryEntryDetails(entry) {
+  if (!entry?.imdbId) return;
+  let media = mediaFromHistoryEntry(entry);
+
+  if (entry.mediaType === "movie") {
+    openMovieDetails(media);
+    return;
+  }
+
+  if (!media.id) {
+    try {
+      const lookedUp = await fetchJson(
+        `${TVMAZE_API}/lookup/shows?imdb=${encodeURIComponent(entry.imdbId)}`
+      );
+      if (!lookedUp?.id) throw new Error("The show could not be found.");
+      media = { ...lookedUp, mediaType: "tv" };
+    } catch (error) {
+      console.error("Could not open episode list", error);
+      window.alert("Could not load the episode list for this show.");
+      return;
+    }
+  }
+
+  await openShow(media, { season: Number(entry.season) || null });
+}
+
+function resumeHistoryEntry(entry) {
+  if (!entry?.imdbId) return;
+
+  if (entry.mediaType === "movie") {
+    const movie = mediaFromHistoryEntry(entry);
     openMovie(movie, { startAt: Number(entry.currentTime) || 0 });
     return;
   }
 
-  const show = {
-    mediaType: "tv",
-    id: entry.showId,
-    name: entry.name,
-    summary: entry.summary || "",
-    externals: { imdb: entry.imdbId },
-    image: {
-      medium: entry.poster || "",
-      original: entry.backdrop || entry.poster || ""
-    }
-  };
+  const show = mediaFromHistoryEntry(entry);
 
   openEpisode(show, entry.season, entry.episode, {
     startAt: Number(entry.currentTime) || 0
@@ -2230,6 +2446,21 @@ function mediaMetaLine(media) {
   return bits.join(" · ");
 }
 
+function mediaDetailMarkup(media) {
+  const bits = [];
+  const year = getMediaYear(media);
+  const rating = getMediaRating(media);
+  if (year) bits.push(`<span>${escapeHtml(year)}</span>`);
+  bits.push(`<span>${getMediaType(media) === "movie" ? "Movie" : "TV Series"}</span>`);
+  if (media.genres?.[0]) bits.push(`<span>${escapeHtml(media.genres[0])}</span>`);
+  if (rating) bits.push(`<span class="rating-chip">★ ${rating.toFixed(1).replace(/\.0$/, "")}</span>`);
+  return bits.join("");
+}
+
+function isNewMedia(media) {
+  return Number(getMediaYear(media)) === new Date().getFullYear();
+}
+
 function cardMarkup(media, cardClass, { libraryId = "", removable = false } = {}) {
   const type = getMediaType(media);
   const libraryAttribute = libraryId
@@ -2239,7 +2470,10 @@ function cardMarkup(media, cardClass, { libraryId = "", removable = false } = {}
     <article class="${cardClass}" data-key="${escapeHtml(mediaKey(media))}"${libraryAttribute} tabindex="0" role="button"
       aria-label="Open ${escapeHtml(getMediaName(media))}">
       <div class="poster">
-        <div class="media-type-badge">${type === "movie" ? "MOVIE" : "TV"}</div>
+        <div class="media-badges">
+          <span class="media-type-badge">${type === "movie" ? "MOVIE" : "TV"}</span>
+          ${isNewMedia(media) ? '<span class="media-new-badge">NEW</span>' : ""}
+        </div>
         ${removable ? `<button class="library-card-remove icon-btn" type="button" data-library-remove="${escapeHtml(libraryId)}" aria-label="Remove ${escapeHtml(getMediaName(media))}" title="Remove from list">${ICONS.close}</button>` : ""}
         ${posterMarkup(media)}
       </div>
@@ -2317,19 +2551,6 @@ function itemsForGenreFull(items, genre) {
     .sort((a, b) => getMediaRating(b) - getMediaRating(a));
 }
 
-function seeAllTileMarkup(label) {
-  return `
-    <button class="row-card see-all-tile" type="button" data-see-all="1" aria-label="See all ${escapeHtml(label)}">
-      <div class="poster see-all-poster">
-        <div class="see-all-inner">
-          ${ICONS.chevronRight}
-          <span>See All</span>
-        </div>
-      </div>
-    </button>
-  `;
-}
-
 // Rows get fully rebuilt whenever the catalogue re-renders (type toggle,
 // load more). A single shared resize listener re-checks whichever row
 // scrollers currently exist, instead of each row leaking its own
@@ -2383,12 +2604,12 @@ function renderRow(container, title, items, fullItems = items, collection = null
   section.innerHTML = `
     <div class="section-head">
       <h2>${escapeHtml(title)}</h2>
+      ${hasMore ? `<button class="section-see-all" type="button" data-see-all="1">See all ${ICONS.chevronRight}</button>` : ""}
     </div>
     <div class="row-scroller">
       <button class="row-arrow row-arrow-left icon-btn" type="button" aria-label="Scroll left">${ICONS.chevronLeft}</button>
       <div class="row-track">
         ${items.map(media => cardMarkup(media, "row-card")).join("")}
-        ${hasMore ? seeAllTileMarkup(title) : ""}
       </div>
       <button class="row-arrow row-arrow-right icon-btn" type="button" aria-label="Scroll right">${ICONS.chevronRight}</button>
     </div>
@@ -2817,8 +3038,8 @@ function positionHoverTrailer(card) {
   const anchor = card.querySelector(".poster, .continue-poster") || card;
   const anchorRect = anchor.getBoundingClientRect();
   const viewportPadding = 16;
-  const width = Math.min(440, window.innerWidth - (viewportPadding * 2));
-  const height = hoverTrailerPreview.offsetHeight || ((width * 9 / 16) + 66);
+  const width = Math.min(480, window.innerWidth - (viewportPadding * 2));
+  const height = hoverTrailerPreview.offsetHeight || ((width * 9 / 16) + 112);
   const left = Math.max(
     viewportPadding,
     Math.min(
@@ -2934,8 +3155,52 @@ function bindHoverTrailer(card, media) {
         .filter(Boolean);
       meta.textContent = metaParts.join(" · ");
 
+      const actions = document.createElement("div");
+      actions.className = "hover-trailer-actions";
+
+      const playButton = document.createElement("button");
+      playButton.className = "hover-trailer-action hover-trailer-play";
+      playButton.type = "button";
+      playButton.innerHTML = `${ICONS.play}<span>Play</span>`;
+      playButton.setAttribute("aria-label", `Play ${getMediaName(media)}`);
+      playButton.addEventListener("click", event => {
+        event.stopPropagation();
+        stopHoverTrailer(card);
+        const saved = getSavedPlayback(getImdbId(media));
+        if (saved) {
+          resumeHistoryEntry(saved);
+        } else if (getMediaType(media) === "movie") {
+          openMovie(media);
+        } else {
+          openEpisode(media, 1, 1);
+        }
+      });
+
+      const saveButton = document.createElement("button");
+      const alreadySaved = state.watchLater.some(item => item.imdbId === getImdbId(media));
+      saveButton.className = `hover-trailer-action hover-trailer-save${alreadySaved ? " saved" : ""}`;
+      saveButton.type = "button";
+      saveButton.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>${alreadySaved ? "Saved" : "Watch later"}</span>`;
+      saveButton.setAttribute("aria-label", `Add ${getMediaName(media)} to Watch Later`);
+      saveButton.addEventListener("click", async event => {
+        event.stopPropagation();
+        if (!state.user) {
+          stopHoverTrailer(card);
+          openAuthModal("signin");
+          return;
+        }
+        state.modalMedia = media;
+        await toggleModalWatchLater();
+        const saved = state.watchLater.some(item => item.imdbId === getImdbId(media));
+        saveButton.classList.toggle("saved", saved);
+        saveButton.querySelector("span").textContent = saved ? "Saved" : "Watch later";
+      });
+
+      actions.append(playButton, saveButton);
+
       details.append(title);
       if (meta.textContent) details.append(meta);
+      details.append(actions);
       layer.replaceChildren(video, details);
     }, HOVER_TRAILER_DELAY_MS);
   });
@@ -3224,6 +3489,7 @@ function populateHero(media) {
 
   heroEyebrow.textContent = isMovie ? "Featured movie" : "Featured TV series";
   heroTitle.textContent = getMediaName(media);
+  heroMeta.innerHTML = mediaDetailMarkup(media);
   heroDescription.textContent = getMediaSummary(media) ||
     (isMovie
       ? "Watch this film without leaving TV Archive."
@@ -3232,10 +3498,17 @@ function populateHero(media) {
   const image = getMediaBackdrop(media);
   heroBg.style.backgroundImage = image ? `url("${image}")` : "";
   loadHeroTrailer(media);
-  heroBrowse.innerHTML = isMovie
-    ? `${ICONS.play}Play movie`
-    : `${ICONS.chevronRight}Browse episodes`;
-  heroBrowse.onclick = () => isMovie ? openMovie(media) : openShow(media);
+  const savedPlayback = getSavedPlayback(getImdbId(media));
+  heroBrowse.innerHTML = savedPlayback
+    ? `${ICONS.play}Resume`
+    : isMovie
+      ? `${ICONS.play}Play movie`
+      : `${ICONS.play}Play`;
+  heroBrowse.onclick = () => savedPlayback
+    ? resumeHistoryEntry(savedPlayback)
+    : isMovie ? openMovie(media) : openEpisode(media, 1, 1);
+  heroInfo.innerHTML = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="12" y1="7" x2="12.01" y2="7"/></svg>More info';
+  heroInfo.onclick = () => isMovie ? openMovieDetails(media) : openShow(media);
 }
 
 async function searchCatalogue(query) {
@@ -3314,12 +3587,18 @@ function liveChannelMarkup(channel) {
         aria-label="Watch ${escapeHtml(channel.name)} live">
         <div class="live-channel-top">
           <span class="live-badge">Live</span>
-          <span class="live-channel-id">ID ${channel.id}</span>
+          <span class="live-channel-id">CH ${channel.id}</span>
         </div>
-        <div class="live-channel-name">${escapeHtml(channel.name)}</div>
+        <div class="live-channel-main">
+          <span class="live-channel-orb" aria-hidden="true">${ICONS.play}</span>
+          <span class="live-channel-copy">
+            <strong class="live-channel-name">${escapeHtml(channel.name)}</strong>
+            <span>${escapeHtml(channel.region)}</span>
+          </span>
+        </div>
         <div class="live-channel-bottom">
-          <span>${escapeHtml(channel.region)}</span>
-          <span class="live-channel-watch">${ICONS.play}Watch</span>
+          <span>Broadcasting now</span>
+          <span class="live-channel-watch">Watch now ${ICONS.chevronRight}</span>
         </div>
       </button>
       <div class="live-channel-actions">
@@ -3605,6 +3884,11 @@ function openDlstreamsScheduleStream(channel) {
   const title = channel.event || channel.name || "Live Sports";
   playerTitle.textContent = title;
   playerSubtitle.textContent = [channel.time, channel.name].filter(Boolean).join(" · ") || "Live";
+  configurePlayerExperience(
+    { name: title, summary: "", mediaType: "live" },
+    { mediaType: "live" },
+    playerSubtitle.textContent
+  );
   document.title = `${title} | TV Archive`;
 
   playerFrame.setAttribute(
@@ -3613,6 +3897,7 @@ function openDlstreamsScheduleStream(channel) {
   );
   playerFrame.src = `${LIVE_STREAM_BASE}${encodeURIComponent(channel.id)}.php`;
   playerScreen.classList.add("open");
+  document.documentElement.classList.add("player-open");
   playerScreen.setAttribute("aria-hidden", "false");
   document.body.style.overflow = "hidden";
 
@@ -3822,6 +4107,11 @@ function openLiveSportsChannel(channel, { replaceRoute = false } = {}) {
 
   playerTitle.textContent = channel.name;
   playerSubtitle.textContent = `Live · ${channel.region}`;
+  configurePlayerExperience(
+    { name: channel.name, summary: "", mediaType: "live" },
+    { mediaType: "live" },
+    playerSubtitle.textContent
+  );
   document.title = `${channel.name} | TV Archive`;
 
   // Only live-sports embeds are sandboxed. The movie/TV provider detects
@@ -3834,6 +4124,7 @@ function openLiveSportsChannel(channel, { replaceRoute = false } = {}) {
   );
   playerFrame.src = `${LIVE_STREAM_BASE}${encodeURIComponent(channel.id)}.php`;
   playerScreen.classList.add("open");
+  document.documentElement.classList.add("player-open");
   playerScreen.setAttribute("aria-hidden", "false");
   document.body.style.overflow = "hidden";
 
@@ -4143,6 +4434,439 @@ async function switchToNextPlaybackSource() {
   }
 }
 
+function setPlayerCommentStatus(target, message = "", stateName = "") {
+  target.textContent = message;
+  if (stateName) target.dataset.state = stateName;
+  else delete target.dataset.state;
+}
+
+function playerCommentMediaId(media) {
+  return getImdbId(media) || `tvmaze-${Number(media?.id || 0)}`;
+}
+
+function commentContextLabel(comment) {
+  if (comment.scope !== "episode") return `${comment.mediaName || "Untitled"} · Series`;
+  const episode = `S${Number(comment.season)} E${Number(comment.episode)}`;
+  return [comment.mediaName || "Untitled", episode, comment.episodeName].filter(Boolean).join(" · ");
+}
+
+function commentAvatarMarkup(comment) {
+  const author = comment.author || {};
+  if (author.profilePicture) {
+    return `<img src="${escapeHtml(author.profilePicture)}" alt="" />`;
+  }
+  return escapeHtml(String(author.username || "U").slice(0, 1).toUpperCase());
+}
+
+function communityCommentMarkup(comment, { showContext = false } = {}) {
+  const created = formatProfileActivity(comment.createdAt);
+  const edited = Number(comment.updatedAt) > Number(comment.createdAt) + 1000;
+  return `
+    <article class="community-comment${showContext ? " profile-community-comment" : ""}" data-comment-id="${escapeHtml(comment.id)}">
+      <div class="community-comment-avatar">${commentAvatarMarkup(comment)}</div>
+      <div class="community-comment-content">
+        <div class="community-comment-head">
+          <strong>@${escapeHtml(comment.author?.username || "user")}</strong>
+          <span>${escapeHtml(created)}${edited ? " · Edited" : ""}</span>
+        </div>
+        ${showContext ? `<div class="community-comment-context">${escapeHtml(commentContextLabel(comment))}</div>` : ""}
+        <p class="community-comment-body">${escapeHtml(comment.text)}</p>
+        ${comment.canEdit ? `
+          <div class="community-comment-actions">
+            <button type="button" data-comment-edit>Edit</button>
+            <button class="danger" type="button" data-comment-delete>Delete</button>
+          </div>` : ""}
+      </div>
+    </article>`;
+}
+
+function allKnownComments() {
+  return [
+    ...state.playerComments.series,
+    ...state.playerComments.episode,
+    ...state.profileComments
+  ];
+}
+
+function knownComment(commentId) {
+  return allKnownComments().find(comment => String(comment.id) === String(commentId));
+}
+
+function replaceKnownComment(updated) {
+  const replace = comment => String(comment.id) === String(updated.id) ? updated : comment;
+  state.playerComments.series = state.playerComments.series.map(replace);
+  state.playerComments.episode = state.playerComments.episode.map(replace);
+  state.profileComments = state.profileComments.map(replace);
+}
+
+function removeKnownComment(commentId) {
+  const keep = comment => String(comment.id) !== String(commentId);
+  state.playerComments.series = state.playerComments.series.filter(keep);
+  state.playerComments.episode = state.playerComments.episode.filter(keep);
+  state.profileComments = state.profileComments.filter(keep);
+}
+
+function renderAllCommentSurfaces() {
+  renderPlayerCommentList("series");
+  renderPlayerCommentList("episode");
+  renderProfileComments();
+}
+
+function startCommentEditor(article, comment) {
+  if (!article || article.querySelector(".community-comment-editor")) return;
+  const body = article.querySelector(".community-comment-body");
+  const actions = article.querySelector(".community-comment-actions");
+  if (!body || !actions) return;
+
+  body.hidden = true;
+  actions.hidden = true;
+  const editor = document.createElement("div");
+  editor.className = "community-comment-editor";
+  editor.innerHTML = `
+    <textarea maxlength="2000" aria-label="Edit comment">${escapeHtml(comment.text)}</textarea>
+    <div class="community-comment-editor-footer">
+      <span class="community-comment-editor-status" role="status"></span>
+      <div>
+        <button type="button" data-comment-cancel>Cancel</button>
+        <button class="primary" type="button" data-comment-save>Save changes</button>
+      </div>
+    </div>`;
+  actions.after(editor);
+  const textarea = editor.querySelector("textarea");
+  const status = editor.querySelector(".community-comment-editor-status");
+  const close = () => {
+    editor.remove();
+    body.hidden = false;
+    actions.hidden = false;
+  };
+  editor.querySelector("[data-comment-cancel]").addEventListener("click", close);
+  editor.querySelector("[data-comment-save]").addEventListener("click", async event => {
+    const text = textarea.value.trim();
+    if (!text) {
+      status.textContent = "Comment text is required.";
+      return;
+    }
+    event.currentTarget.disabled = true;
+    status.textContent = "Saving…";
+    try {
+      const data = await apiFetch(`/api/comments/${encodeURIComponent(comment.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ text })
+      });
+      replaceKnownComment(data.comment);
+      renderAllCommentSurfaces();
+    } catch (error) {
+      status.textContent = error.message || "Could not update this comment.";
+      event.currentTarget.disabled = false;
+    }
+  });
+  textarea.focus();
+  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+}
+
+function bindCommunityCommentActions(container) {
+  if (!container) return;
+  container.querySelectorAll("[data-comment-id]").forEach(article => {
+    const comment = knownComment(article.dataset.commentId);
+    if (!comment?.canEdit) return;
+    article.querySelector("[data-comment-edit]")?.addEventListener("click", () => startCommentEditor(article, comment));
+    article.querySelector("[data-comment-delete]")?.addEventListener("click", async event => {
+      if (!window.confirm("Delete this comment?")) return;
+      event.currentTarget.disabled = true;
+      try {
+        await apiFetch(`/api/comments/${encodeURIComponent(comment.id)}`, { method: "DELETE" });
+        removeKnownComment(comment.id);
+        renderAllCommentSurfaces();
+      } catch (error) {
+        window.alert(error.message || "Could not delete this comment.");
+        event.currentTarget.disabled = false;
+      }
+    });
+  });
+}
+
+function renderPlayerCommentList(scope) {
+  const container = scope === "series" ? playerSeriesCommentList : playerEpisodeCommentList;
+  if (!container) return;
+  const comments = state.playerComments[scope] || [];
+  container.innerHTML = comments.length
+    ? comments.map(comment => communityCommentMarkup(comment)).join("")
+    : '<div class="community-comment-empty">No comments yet. Start the conversation.</div>';
+  bindCommunityCommentActions(container);
+}
+
+function renderProfileComments() {
+  if (!profileCommentsList) return;
+  if (!state.profileCommentsLoaded) {
+    profileCommentsList.innerHTML = '<div class="profile-empty">Loading comments…</div>';
+    return;
+  }
+  if (state.profileCommentsError) {
+    profileCommentsList.innerHTML = `<div class="profile-empty">${escapeHtml(state.profileCommentsError)}</div>`;
+    return;
+  }
+  profileCommentsList.innerHTML = state.profileComments.length
+    ? state.profileComments.map(comment => communityCommentMarkup(comment, { showContext: true })).join("")
+    : '<div class="profile-empty">You have not posted any comments yet.</div>';
+  bindCommunityCommentActions(profileCommentsList);
+}
+
+async function loadProfileComments() {
+  if (!state.user || !profileCommentsList) return;
+  state.profileCommentsLoaded = false;
+  state.profileCommentsError = "";
+  if (profileCommentsRefresh) profileCommentsRefresh.disabled = true;
+  renderProfileComments();
+  try {
+    const data = await apiFetch("/api/comments/mine");
+    state.profileComments = Array.isArray(data?.comments) ? data.comments : [];
+    state.profileCommentsLoaded = true;
+    renderProfileComments();
+  } catch (error) {
+    state.profileComments = [];
+    state.profileCommentsLoaded = true;
+    state.profileCommentsError = error.message || "Could not load your comments.";
+    renderProfileComments();
+  } finally {
+    if (profileCommentsRefresh) profileCommentsRefresh.disabled = false;
+  }
+}
+
+async function loadPlayerComments(media, season, episode) {
+  if (!playerComments || !playerSeriesComment || !playerEpisodeComment) return;
+  const requestId = ++playerCommentsRequestId;
+  const activeAtStart = state.activePlayback;
+  const imdbId = playerCommentMediaId(media);
+  state.playerComments = { series: [], episode: [] };
+  playerSeriesComment.value = "";
+  playerEpisodeComment.value = "";
+  setPlayerCommentStatus(playerSeriesCommentStatus);
+  setPlayerCommentStatus(playerEpisodeCommentStatus);
+  playerSeriesCommentList.innerHTML = '<div class="community-comment-empty">Loading comments…</div>';
+  playerEpisodeCommentList.innerHTML = '<div class="community-comment-empty">Loading comments…</div>';
+
+  try {
+    const base = `imdbId=${encodeURIComponent(imdbId)}`;
+    const [seriesData, episodeData] = await Promise.all([
+      apiFetch(`/api/comments?${base}&scope=series`),
+      apiFetch(`/api/comments?${base}&scope=episode&season=${Number(season)}&episode=${Number(episode)}`)
+    ]);
+    if (requestId !== playerCommentsRequestId || state.activePlayback !== activeAtStart) return;
+    state.playerComments = {
+      series: Array.isArray(seriesData?.comments) ? seriesData.comments : [],
+      episode: Array.isArray(episodeData?.comments) ? episodeData.comments : []
+    };
+    renderPlayerCommentList("series");
+    renderPlayerCommentList("episode");
+  } catch (error) {
+    if (requestId !== playerCommentsRequestId || state.activePlayback !== activeAtStart) return;
+    const message = escapeHtml(error.message || "Comments could not be loaded right now.");
+    playerSeriesCommentList.innerHTML = `<div class="community-comment-empty error">${message}</div>`;
+    playerEpisodeCommentList.innerHTML = `<div class="community-comment-empty error">${message}</div>`;
+  }
+}
+
+async function submitPlayerComment(scope) {
+  const active = state.activePlayback;
+  if (!active || active.mediaType !== "tv") return;
+  const isSeries = scope === "series";
+  const field = isSeries ? playerSeriesComment : playerEpisodeComment;
+  const status = isSeries ? playerSeriesCommentStatus : playerEpisodeCommentStatus;
+  const button = isSeries ? playerSeriesCommentSave : playerEpisodeCommentSave;
+  const value = field.value.trim();
+  if (!value) {
+    setPlayerCommentStatus(status, "Write a comment first", "error");
+    field.focus();
+    return;
+  }
+
+  button.disabled = true;
+  setPlayerCommentStatus(status, "Posting…");
+  try {
+    const data = await apiFetch("/api/comments", {
+      method: "POST",
+      body: JSON.stringify({
+        imdbId: playerCommentMediaId(active.media),
+        mediaName: getMediaName(active.media),
+        episodeName: isSeries ? "" : (active.episodeName || playerEpisodeTitle.textContent || ""),
+        scope,
+        season: isSeries ? null : active.season,
+        episode: isSeries ? null : active.episode,
+        text: value
+      })
+    });
+    state.playerComments[scope] = [data.comment, ...state.playerComments[scope]];
+    if (state.profileCommentsLoaded) {
+      state.profileCommentsError = "";
+      state.profileComments = [data.comment, ...state.profileComments];
+    }
+    field.value = "";
+    setPlayerCommentStatus(status, "Comment posted", "saved");
+    renderPlayerCommentList(scope);
+    renderProfileComments();
+  } catch (error) {
+    setPlayerCommentStatus(status, error.message || "Could not post this comment", "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function playerDetailsMetadata(media, playbackState = {}, subtitle = "") {
+  if (playbackState.mediaType !== "tv") return subtitle;
+  const year = getMediaYear(media);
+  const genres = Array.isArray(media?.genres) ? media.genres.slice(0, 2).join(" / ") : "";
+  const runtime = Number(playbackState.episodeRuntime) > 0
+    ? `${Number(playbackState.episodeRuntime)} min`
+    : "";
+  const resume = Number(playbackState.startAt) >= 5
+    ? `Resuming at ${formatWatchTime(playbackState.startAt)}`
+    : "";
+  return [year, genres, runtime, resume].filter(Boolean).join(" · ");
+}
+
+function presentPlayerTitle(media, playbackState = {}, subtitle = "") {
+  const isTv = playbackState.mediaType === "tv";
+  playerDetailsTitle.textContent = getMediaName(media);
+  playerEpisodeBadge.hidden = !isTv;
+  playerEpisodeTitle.hidden = !isTv;
+
+  if (isTv) {
+    playerEpisodeBadge.textContent = `S${Number(playbackState.season)} E${Number(playbackState.episode)}`;
+    playerEpisodeTitle.textContent = playbackState.episodeName || `Episode ${Number(playbackState.episode)}`;
+  } else {
+    playerEpisodeBadge.textContent = "";
+    playerEpisodeTitle.textContent = "";
+  }
+
+  playerDetailsMeta.textContent = playerDetailsMetadata(media, playbackState, subtitle);
+}
+
+function playerEpisodeImageMarkup(show, episode) {
+  const image = episode?.image?.medium || episode?.image?.original || getMediaBackdrop(show);
+  if (!image) {
+    return `<span class="player-episode-thumb-fallback">E${Number(episode?.number) || "–"}</span>`;
+  }
+  return `<img src="${escapeHtml(image)}" alt="" loading="lazy" />`;
+}
+
+function renderPlayerEpisodeList(show, season, currentEpisode) {
+  if (!playerEpisodeList || !playerEpisodeSidebar || playerEpisodeSidebar.hidden) return;
+  const episodes = state.currentEpisodes
+    .filter(item => Number(item.season) === Number(season))
+    .sort((a, b) => Number(a.number) - Number(b.number));
+
+  if (!episodes.length) {
+    playerEpisodeList.innerHTML = '<div class="player-episode-status">No episodes were found for this season.</div>';
+    return;
+  }
+
+  playerEpisodeList.innerHTML = episodes.map(episode => {
+    const active = Number(episode.number) === Number(currentEpisode);
+    const runtime = Number(episode.runtime) > 0 ? `${Number(episode.runtime)} min` : "Episode";
+    return `
+      <button class="player-episode-item${active ? " active" : ""}" type="button"
+        data-player-season="${Number(season)}" data-player-episode="${Number(episode.number)}"
+        ${active ? 'aria-current="true"' : ""}>
+        <span class="player-episode-thumb">
+          ${playerEpisodeImageMarkup(show, episode)}
+          <span class="player-episode-number">${Number(episode.number)}</span>
+          ${active ? '<span class="player-episode-playing">Playing</span>' : ""}
+        </span>
+        <span class="player-episode-copy">
+          <strong>${escapeHtml(episode.name || `Episode ${episode.number}`)}</strong>
+          <span>S${Number(season)} E${Number(episode.number)} · ${escapeHtml(runtime)}</span>
+        </span>
+      </button>`;
+  }).join("");
+
+  playerEpisodeList.querySelectorAll("[data-player-episode]").forEach(button => {
+    button.addEventListener("click", () => {
+      if (button.classList.contains("active")) return;
+      void openEpisode(
+        show,
+        Number(button.dataset.playerSeason),
+        Number(button.dataset.playerEpisode),
+        { replaceRoute: true }
+      );
+    });
+  });
+
+  window.requestAnimationFrame(() => {
+    playerEpisodeList.querySelector(".player-episode-item.active")
+      ?.scrollIntoView({ block: "nearest" });
+  });
+}
+
+async function preparePlayerEpisodes(show, playbackState) {
+  if (!playerEpisodeSidebar || !playerSeasonSelect || !playerEpisodeList) return;
+  const requestId = ++playerEpisodeRequestId;
+  const activeAtStart = state.activePlayback;
+  playerEpisodeSidebar.hidden = false;
+  playerEpisodeList.innerHTML = '<div class="player-episode-status"><div class="spinner"></div>Loading episodes…</div>';
+
+  try {
+    const episodes = await fetchEpisodesForShow(show);
+    if (requestId !== playerEpisodeRequestId || state.activePlayback !== activeAtStart) return;
+
+    state.currentShow = show;
+    state.currentEpisodes = episodes;
+    const seasons = [...new Set(episodes.map(item => Number(item.season)).filter(Number.isInteger))]
+      .sort((a, b) => a - b);
+    const currentSeason = seasons.includes(Number(playbackState.season))
+      ? Number(playbackState.season)
+      : seasons[0];
+
+    playerSeasonSelect.innerHTML = seasons.map(season =>
+      `<option value="${season}">Season ${season}</option>`
+    ).join("");
+    playerSeasonSelect.disabled = !seasons.length;
+    if (!seasons.length) {
+      playerEpisodeList.innerHTML = '<div class="player-episode-status">No numbered episodes are available.</div>';
+      return;
+    }
+    playerSeasonSelect.value = String(currentSeason);
+    renderPlayerEpisodeList(show, currentSeason, playbackState.episode);
+  } catch (error) {
+    if (requestId !== playerEpisodeRequestId) return;
+    console.warn("Could not build the player episode list", error);
+    playerEpisodeList.innerHTML = '<div class="player-episode-status">Episodes could not be loaded right now.</div>';
+  }
+}
+
+function configurePlayerExperience(media, playbackState = {}, subtitle = "") {
+  const mode = playbackState.mediaType === "tv"
+    ? "tv"
+    : playbackState.mediaType === "live" ? "live" : "movie";
+  playerEpisodeRequestId += 1;
+  playerScreen.classList.remove("tv-mode", "movie-mode", "live-mode");
+  playerScreen.classList.add(`${mode}-mode`);
+
+  if (mode === "live") {
+    playerDetails.hidden = true;
+    playerComments.hidden = true;
+    playerEpisodeSidebar.hidden = true;
+    playerEpisodeList.innerHTML = "";
+    return;
+  }
+
+  playerDetails.hidden = false;
+  playerDetailsEyebrow.textContent = mode === "tv" ? "Now watching" : "Feature film";
+  presentPlayerTitle(media, playbackState, subtitle);
+  playerDescription.textContent = getMediaSummary(media) ||
+    (mode === "tv" ? "Show description unavailable." : "Movie description unavailable.");
+
+  if (mode === "tv") {
+    playerComments.hidden = false;
+    loadPlayerComments(media, playbackState.season, playbackState.episode);
+    playerEpisodeSidebar.hidden = false;
+    void preparePlayerEpisodes(media, playbackState);
+  } else {
+    playerComments.hidden = true;
+    playerEpisodeSidebar.hidden = true;
+    playerEpisodeList.innerHTML = "";
+  }
+}
+
 function launchPlayer(media, url, subtitle, playbackState) {
   heroTrailerCommand("pauseVideo");
   const source = isValidPlaybackSource(playbackState?.source)
@@ -4160,6 +4884,7 @@ function launchPlayer(media, url, subtitle, playbackState) {
   state.episodeAdvanceInFlight = false;
   playerTitle.textContent = getMediaName(media);
   playerSubtitle.textContent = subtitle;
+  configurePlayerExperience(media, playbackState, subtitle);
 
   if (playbackState?.mediaType === "tv") {
     document.title = `${getMediaName(media)} · S${playbackState.season}E${playbackState.episode} | TV Archive`;
@@ -4170,6 +4895,7 @@ function launchPlayer(media, url, subtitle, playbackState) {
   // Movies and TV must not be sandboxed: the playback provider rejects
   // sandboxed embeds ("Please Disable Sandbox").
   playerScreen.classList.add("open");
+  document.documentElement.classList.add("player-open");
   playerScreen.setAttribute("aria-hidden", "false");
   document.body.style.overflow = "hidden";
   setPlayerFrameSource(url, source);
@@ -4258,11 +4984,26 @@ function syncActiveTvEpisode(season, episode) {
 
   const episodeData = findKnownEpisode(active.media, season, episode);
   const episodeName = episodeData?.name || "";
+  active.episodeName = episodeName;
+  active.episodeRuntime = episodeData?.runtime || null;
 
   playerTitle.textContent = getMediaName(active.media);
   playerSubtitle.textContent =
     `Season ${season} · Episode ${episode}` +
     (episodeName ? ` · ${episodeName}` : "");
+  presentPlayerTitle(active.media, {
+    mediaType: "tv",
+    season,
+    episode,
+    episodeName,
+    episodeRuntime: episodeData?.runtime,
+    startAt: 0
+  }, playerSubtitle.textContent);
+  loadPlayerComments(active.media, season, episode);
+  if (playerSeasonSelect?.querySelector(`option[value="${season}"]`)) {
+    playerSeasonSelect.value = String(season);
+    renderPlayerEpisodeList(active.media, season, episode);
+  }
   document.title = `${getMediaName(active.media)} · S${season}E${episode} | TV Archive`;
 
   const entry = makeWatchEntry(active.media, {
@@ -4286,7 +5027,17 @@ function syncActiveTvEpisode(season, episode) {
         return;
       }
 
+      current.episodeName = resolvedName;
+      current.episodeRuntime = resolved?.runtime || current.episodeRuntime;
       playerSubtitle.textContent = `Season ${season} · Episode ${episode} · ${resolvedName}`;
+      presentPlayerTitle(current.media, {
+        mediaType: "tv",
+        season,
+        episode,
+        episodeName: resolvedName,
+        episodeRuntime: resolved?.runtime,
+        startAt: 0
+      }, playerSubtitle.textContent);
       const saved = getSavedPlayback(getImdbId(mediaAtLookup));
       if (saved && Number(saved.season) === season && Number(saved.episode) === episode &&
           saved.episodeName !== resolvedName) {
@@ -4424,6 +5175,9 @@ async function openEpisode(show, season, episode, options = {}) {
         mediaType: "tv",
         season: Number(season),
         episode: Number(episode),
+        episodeName,
+        episodeRuntime: episodeData?.runtime,
+        startAt,
         source: playback.source,
         attemptedSources: playback.attemptedSources
       }
@@ -4552,6 +5306,7 @@ function openMovieDetails(movie) {
   state.currentEpisodes = [];
   modalEyebrow.textContent = "Movie";
   modalTitle.textContent = getMediaName(movie);
+  modalMeta.innerHTML = mediaDetailMarkup(movie);
   modalDescription.textContent = getMediaSummary(movie) || "Ready to watch.";
   updateModalLibraryActions(movie);
 
@@ -4602,6 +5357,7 @@ async function openMovie(movie, options = {}) {
         mediaType: "movie",
         season: null,
         episode: null,
+        startAt,
         source: playback.source,
         attemptedSources: playback.attemptedSources
       }
@@ -4638,11 +5394,16 @@ function closePlayer({ resetRoute = true } = {}) {
   syncActivePlaybackOnExit();
   cancelPlayerLoadWatchdog();
   playerScreen.classList.remove("open");
+  document.documentElement.classList.remove("player-open");
+  playerScreen.classList.remove("tv-mode", "movie-mode", "live-mode");
   playerScreen.setAttribute("aria-hidden", "true");
   stopPlayerFrame();
   state.activePlayback = null;
   state.pendingEpisodeAdvance = false;
   state.episodeAdvanceInFlight = false;
+  playerEpisodeRequestId += 1;
+  playerEpisodeSidebar.hidden = true;
+  playerEpisodeList.innerHTML = "";
   document.body.style.overflow = "";
   document.title = "TV Archive";
   if (heroSection.style.display !== "none") heroTrailerCommand("playVideo");
@@ -4659,7 +5420,7 @@ function closePlayer({ resetRoute = true } = {}) {
   }
 }
 
-async function openShow(show) {
+async function openShow(show, { season: requestedSeason = null } = {}) {
   if (!validPlayableShow(show)) return;
 
   state.currentShow = show;
@@ -4667,6 +5428,7 @@ async function openShow(show) {
   state.currentEpisodes = [];
   modalEyebrow.textContent = "TV Series";
   modalTitle.textContent = show.name;
+  modalMeta.innerHTML = mediaDetailMarkup(show);
   modalDescription.textContent = getMediaSummary(show) || "Loading episode information…";
   updateModalLibraryActions(show);
 
@@ -4716,7 +5478,10 @@ async function openShow(show) {
       season => `<option value="${season}">Season ${season}</option>`
     ).join("");
     seasonSelect.disabled = false;
-    state.currentSeason = seasons[0];
+    state.currentSeason = seasons.includes(Number(requestedSeason))
+      ? Number(requestedSeason)
+      : seasons[0];
+    seasonSelect.value = String(state.currentSeason);
     renderEpisodes();
   } catch (error) {
     console.error(error);
@@ -4740,13 +5505,20 @@ function renderEpisodes() {
     return;
   }
 
-  episodeGrid.innerHTML = episodes.map(episode => `
-    <button class="episode" data-episode="${episode.number}">
-      <strong>Episode ${episode.number}</strong>
-      <span class="episode-name">${escapeHtml(episode.name || "")}</span>
-      <small>S${season} E${episode.number}</small>
-    </button>
-  `).join("");
+  episodeGrid.innerHTML = episodes.map(episode => {
+    const runtime = Number(episode.runtime) > 0 ? `${Number(episode.runtime)} min` : "Episode";
+    return `
+      <button class="episode" data-episode="${episode.number}">
+        <span class="episode-thumb">
+          ${playerEpisodeImageMarkup(show, episode)}
+          <span class="episode-thumb-number">${Number(episode.number)}</span>
+        </span>
+        <span class="episode-copy">
+          <strong>${escapeHtml(episode.name || `Episode ${episode.number}`)}</strong>
+          <small>S${season} E${episode.number} · ${escapeHtml(runtime)}</small>
+        </span>
+      </button>`;
+  }).join("");
 
   episodeGrid.querySelectorAll(".episode").forEach(button => {
     button.addEventListener("click", () =>
@@ -4774,6 +5546,33 @@ function closeModal() {
 }
 
 seasonSelect.addEventListener("change", renderEpisodes);
+playerSeasonSelect.addEventListener("change", () => {
+  const active = state.activePlayback;
+  if (!active || active.mediaType !== "tv") return;
+  const selectedSeason = Number(playerSeasonSelect.value);
+  renderPlayerEpisodeList(
+    active.media,
+    selectedSeason,
+    selectedSeason === Number(active.season) ? active.episode : 0
+  );
+});
+
+playerSeriesComment.addEventListener("input", () => {
+  setPlayerCommentStatus(playerSeriesCommentStatus, `${playerSeriesComment.value.length}/2000`);
+});
+playerEpisodeComment.addEventListener("input", () => {
+  setPlayerCommentStatus(playerEpisodeCommentStatus, `${playerEpisodeComment.value.length}/2000`);
+});
+playerSeriesCommentSave.addEventListener("click", () => submitPlayerComment("series"));
+playerEpisodeCommentSave.addEventListener("click", () => submitPlayerComment("episode"));
+[playerSeriesComment, playerEpisodeComment].forEach((field, index) => {
+  field.addEventListener("keydown", event => {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      event.preventDefault();
+      submitPlayerComment(index === 0 ? "series" : "episode");
+    }
+  });
+});
 
 searchInput.addEventListener("input", event => {
   clearTimeout(state.searchTimer);
@@ -4819,6 +5618,7 @@ profileTabs.addEventListener("click", event => {
   const button = event.target.closest("[data-profile-tab]");
   if (button) setProfileTab(button.dataset.profileTab);
 });
+profileCommentsRefresh?.addEventListener("click", loadProfileComments);
 profileClearHistory.addEventListener("click", clearProfileHistory);
 profilePictureInput.addEventListener("change", changeProfilePicture);
 profilePictureRemove.addEventListener("click", removeProfilePicture);

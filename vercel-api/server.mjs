@@ -266,6 +266,62 @@ function libraryRowToClient(row) {
   };
 }
 
+function normaliseCommentInput(body) {
+  const imdbId = cleanText(body?.imdbId, 64);
+  if (!/^[A-Za-z0-9._:-]{1,64}$/.test(imdbId)) {
+    const error = new Error("Invalid media identifier.");
+    error.status = 400;
+    throw error;
+  }
+
+  const scope = body?.scope === "episode" ? "episode" : "series";
+  const season = scope === "episode" ? nullableInteger(body?.season) : null;
+  const episode = scope === "episode" ? nullableInteger(body?.episode) : null;
+  if (scope === "episode" && (!season || season < 1 || !episode || episode < 1)) {
+    const error = new Error("A valid season and episode are required.");
+    error.status = 400;
+    throw error;
+  }
+
+  const text = cleanText(body?.text, 2000);
+  if (!text) {
+    const error = new Error("Comment text is required.");
+    error.status = 400;
+    throw error;
+  }
+
+  return {
+    imdbId,
+    mediaName: cleanText(body?.mediaName, 250) || "Untitled",
+    episodeName: scope === "episode" ? cleanText(body?.episodeName, 250) : "",
+    scope,
+    season,
+    episode,
+    text
+  };
+}
+
+function commentRowToClient(row, viewerId = null) {
+  return {
+    id: row.id,
+    imdbId: row.imdb_id,
+    mediaName: row.media_name,
+    episodeName: row.episode_name || "",
+    scope: row.comment_scope,
+    season: row.season,
+    episode: row.episode,
+    text: row.comment_text,
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : null,
+    updatedAt: row.updated_at ? new Date(row.updated_at).getTime() : null,
+    author: {
+      id: row.user_id,
+      username: row.username || "TV Archive user",
+      profilePicture: row.profile_picture || ""
+    },
+    canEdit: viewerId !== null && String(row.user_id) === String(viewerId)
+  };
+}
+
 function normaliseListName(value) {
   const name = cleanText(value, 60);
   if (!name) {
@@ -573,6 +629,35 @@ async function ensureSchema() {
     )
   `;
   await sql`CREATE INDEX IF NOT EXISTS list_items_list_added_idx ON list_items(list_id, added_at DESC)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS media_comments (
+      id uuid PRIMARY KEY,
+      user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      imdb_id text NOT NULL,
+      media_name text NOT NULL,
+      episode_name text NOT NULL DEFAULT '',
+      comment_scope text NOT NULL CHECK (comment_scope IN ('series', 'episode')),
+      season integer,
+      episode integer,
+      comment_text text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CHECK (
+        (comment_scope = 'series' AND season IS NULL AND episode IS NULL)
+        OR
+        (comment_scope = 'episode' AND season > 0 AND episode > 0)
+      )
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS media_comments_thread_idx
+    ON media_comments(imdb_id, comment_scope, season, episode, created_at DESC)
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS media_comments_user_idx
+    ON media_comments(user_id, created_at DESC)
+  `;
 }
 
 let schemaReadyPromise = null;
@@ -972,6 +1057,129 @@ app.patch("/api/account/profile-picture", requireAuth, async (req, res, next) =>
       RETURNING id, username, created_at, profile_picture, playback_source, auto_switch_source
     `;
     res.json({ user: serialiseUser(rows[0]) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/comments", requireAuth, async (req, res, next) => {
+  try {
+    const imdbId = cleanText(req.query.imdbId, 64);
+    if (!/^[A-Za-z0-9._:-]{1,64}$/.test(imdbId)) {
+      return res.status(400).json({ error: "Invalid media identifier." });
+    }
+
+    const scope = req.query.scope === "episode" ? "episode" : "series";
+    let rows;
+    if (scope === "episode") {
+      const season = nullableInteger(req.query.season);
+      const episode = nullableInteger(req.query.episode);
+      if (!season || season < 1 || !episode || episode < 1) {
+        return res.status(400).json({ error: "A valid season and episode are required." });
+      }
+      rows = await sql`
+        SELECT c.*, u.username, u.profile_picture
+        FROM media_comments c
+        JOIN users u ON u.id = c.user_id
+        WHERE c.imdb_id = ${imdbId}
+          AND c.comment_scope = 'episode'
+          AND c.season = ${season}
+          AND c.episode = ${episode}
+        ORDER BY c.created_at DESC
+        LIMIT 100
+      `;
+    } else {
+      rows = await sql`
+        SELECT c.*, u.username, u.profile_picture
+        FROM media_comments c
+        JOIN users u ON u.id = c.user_id
+        WHERE c.imdb_id = ${imdbId}
+          AND c.comment_scope = 'series'
+        ORDER BY c.created_at DESC
+        LIMIT 100
+      `;
+    }
+
+    res.json({ comments: rows.map(row => commentRowToClient(row, req.user.id)) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/comments/mine", requireAuth, async (req, res, next) => {
+  try {
+    const rows = await sql`
+      SELECT c.*, u.username, u.profile_picture
+      FROM media_comments c
+      JOIN users u ON u.id = c.user_id
+      WHERE c.user_id = ${req.user.id}
+      ORDER BY c.created_at DESC
+    `;
+    res.json({ comments: rows.map(row => commentRowToClient(row, req.user.id)) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/comments", requireAuth, async (req, res, next) => {
+  try {
+    const comment = normaliseCommentInput(req.body);
+    const rows = await sql`
+      INSERT INTO media_comments (
+        id, user_id, imdb_id, media_name, episode_name,
+        comment_scope, season, episode, comment_text
+      )
+      VALUES (
+        ${crypto.randomUUID()}, ${req.user.id}, ${comment.imdbId}, ${comment.mediaName},
+        ${comment.episodeName}, ${comment.scope}, ${comment.season}, ${comment.episode}, ${comment.text}
+      )
+      RETURNING *
+    `;
+    const row = {
+      ...rows[0],
+      username: req.user.username,
+      profile_picture: req.user.profile_picture
+    };
+    res.status(201).json({ comment: commentRowToClient(row, req.user.id) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/comments/:commentId", requireAuth, async (req, res, next) => {
+  try {
+    const commentId = cleanText(req.params.commentId, 64);
+    const text = cleanText(req.body?.text, 2000);
+    if (!text) return res.status(400).json({ error: "Comment text is required." });
+
+    const rows = await sql`
+      UPDATE media_comments
+      SET comment_text = ${text}, updated_at = now()
+      WHERE id::text = ${commentId} AND user_id = ${req.user.id}
+      RETURNING *
+    `;
+    if (!rows[0]) return res.status(404).json({ error: "Comment not found." });
+    const row = {
+      ...rows[0],
+      username: req.user.username,
+      profile_picture: req.user.profile_picture
+    };
+    res.json({ comment: commentRowToClient(row, req.user.id) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/comments/:commentId", requireAuth, async (req, res, next) => {
+  try {
+    const commentId = cleanText(req.params.commentId, 64);
+    const rows = await sql`
+      DELETE FROM media_comments
+      WHERE id::text = ${commentId} AND user_id = ${req.user.id}
+      RETURNING id
+    `;
+    if (!rows[0]) return res.status(404).json({ error: "Comment not found." });
+    res.status(204).end();
   } catch (error) {
     next(error);
   }

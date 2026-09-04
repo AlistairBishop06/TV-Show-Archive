@@ -131,29 +131,18 @@ let heroTrailerRequestId = 0;
 let modalTrailerRequestId = 0;
 let trailersMuted = true;
 let hoverTrailerCard = null;
+let hoverTrailerDisplayCard = null;
 let hoverTrailerTimer = 0;
 let hoverTrailerRequestId = 0;
 let playerEpisodeRequestId = 0;
 let playerCommentsRequestId = 0;
-// Keep this delay within the 400–600ms range so intentional hovers feel
-// responsive without trailers flashing while the pointer crosses a shelf.
-const HOVER_TRAILER_DELAY_MS = 500;
+// Start the lookup immediately, but keep a short guard against accidental
+// pointer passes before morphing the card into its trailer state.
+const HOVER_TRAILER_DELAY_MS = 220;
 const CARD_TRAILERS_ENABLED = window.matchMedia("(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)").matches;
 const hoverTrailerPreview = document.createElement("div");
 hoverTrailerPreview.className = "hover-trailer-preview";
 hoverTrailerPreview.setAttribute("aria-hidden", "true");
-document.body.appendChild(hoverTrailerPreview);
-
-hoverTrailerPreview.addEventListener("mouseleave", event => {
-  const nextTarget = event.relatedTarget;
-  if (nextTarget instanceof Node && hoverTrailerCard?.contains(nextTarget)) return;
-  stopHoverTrailer();
-});
-
-hoverTrailerPreview.addEventListener("click", event => {
-  if (event.target.closest("[data-hover-trailer-sound]")) return;
-  if (hoverTrailerCard?.isConnected) hoverTrailerCard.click();
-});
 const HOME_PAGE_BATCH = 1;
 const WATCH_HISTORY_KEY = "showhub-watch-history-v2";
 const PENDING_WATCH_HISTORY_KEY_PREFIX = "showhub-pending-watch-progress-v1";
@@ -3034,66 +3023,103 @@ function hoverTrailerLayer() {
 
 function positionHoverTrailer(card) {
   if (!card?.isConnected) return;
-
-  const anchor = card.querySelector(".poster, .continue-poster") || card;
-  const anchorRect = anchor.getBoundingClientRect();
-  const viewportPadding = 16;
-  const width = Math.min(480, window.innerWidth - (viewportPadding * 2));
-  const height = hoverTrailerPreview.offsetHeight || ((width * 9 / 16) + 112);
-  const left = Math.max(
-    viewportPadding,
-    Math.min(
-      window.innerWidth - width - viewportPadding,
-      anchorRect.left + (anchorRect.width - width) / 2
-    )
-  );
-  const top = Math.max(
-    viewportPadding,
-    Math.min(
-      window.innerHeight - height - viewportPadding,
-      anchorRect.top + (anchorRect.height - height) / 2
-    )
-  );
-
-  hoverTrailerPreview.style.width = `${width}px`;
-  hoverTrailerPreview.style.left = `${left}px`;
-  hoverTrailerPreview.style.top = `${top}px`;
+  const track = card.closest(".row-track");
+  if (!track) return;
+  const posterHeight = card.querySelector(":scope > .poster")?.getBoundingClientRect().height || 0;
+  if (!posterHeight) return;
+  // A 16:9 frame derived from the poster's current height changes only the
+  // horizontal dimension, keeping this shelf and every row below it still.
+  card.style.setProperty("--trailer-card-height", `${posterHeight}px`);
+  card.style.setProperty("--trailer-card-width", `${posterHeight * (16 / 9)}px`);
 }
 
-function stopHoverTrailer(card = hoverTrailerCard) {
-  if (hoverTrailerTimer) {
+function resetHoverTrailerImmediately(card = hoverTrailerDisplayCard) {
+  if (!card) return;
+  card.dataset.trailerExitToken = String(Number(card.dataset.trailerExitToken || 0) + 1);
+  card.classList.remove("trailer-expanded", "trailer-collapsing", "trailer-returning", "thumbnail-visible");
+  card.style.removeProperty("--trailer-card-width");
+  card.style.removeProperty("--trailer-card-height");
+  const layer = hoverTrailerLayer();
+  if (layer?.parentElement === card) {
+    layer.classList.remove("visible", "playing");
+    layer.setAttribute("aria-hidden", "true");
+    layer.replaceChildren();
+    layer.remove();
+  }
+  if (hoverTrailerDisplayCard === card) hoverTrailerDisplayCard = null;
+}
+
+function stopHoverTrailer(card = hoverTrailerCard || hoverTrailerDisplayCard) {
+  if (hoverTrailerTimer && (!card || hoverTrailerCard === card)) {
     clearTimeout(hoverTrailerTimer);
     hoverTrailerTimer = 0;
   }
   hoverTrailerRequestId += 1;
 
-  const target = card || hoverTrailerCard;
-  const layer = hoverTrailerLayer();
-  if (layer) {
-    layer.classList.remove("visible");
-    layer.setAttribute("aria-hidden", "true");
-    layer.replaceChildren();
+  const target = card || hoverTrailerCard || hoverTrailerDisplayCard;
+  if (!target) return;
+  if (hoverTrailerCard === target) hoverTrailerCard = null;
+
+  if (hoverTrailerDisplayCard !== target || !target.classList.contains("trailer-expanded")) {
+    target.classList.remove("trailer-returning", "thumbnail-visible");
+    target.style.removeProperty("--trailer-card-width");
+    return;
   }
 
-  if (!card || hoverTrailerCard === card) hoverTrailerCard = null;
+  const layer = hoverTrailerLayer();
+  const exitToken = String(Number(target.dataset.trailerExitToken || 0) + 1);
+  target.dataset.trailerExitToken = exitToken;
+  target.classList.remove("trailer-expanded");
+  target.classList.add("trailer-collapsing");
+  target.style.removeProperty("--trailer-card-width");
+  window.requestAnimationFrame(refreshAllRowArrows);
+  const collapseDuration = target.closest(".row-track") ? 330 : 120;
+
+  window.setTimeout(() => {
+    if (target.dataset.trailerExitToken !== exitToken || hoverTrailerDisplayCard !== target) return;
+    if (layer?.parentElement === target) {
+      layer.classList.remove("visible", "playing");
+      layer.setAttribute("aria-hidden", "true");
+      layer.replaceChildren();
+      layer.remove();
+    }
+    target.classList.remove("trailer-collapsing");
+    target.classList.add("trailer-returning");
+    target.style.removeProperty("--trailer-card-height");
+    window.requestAnimationFrame(() => {
+      if (target.dataset.trailerExitToken === exitToken) target.classList.add("thumbnail-visible");
+    });
+    window.setTimeout(() => {
+      if (target.dataset.trailerExitToken !== exitToken) return;
+      target.classList.remove("trailer-returning", "thumbnail-visible");
+      if (hoverTrailerDisplayCard === target) hoverTrailerDisplayCard = null;
+      refreshAllRowArrows();
+    }, 170);
+  }, collapseDuration);
 }
 
 function bindHoverTrailer(card, media) {
-  if (!CARD_TRAILERS_ENABLED || !card || !media) return;
+  // The in-flow morph belongs to horizontal shelves, where flex sizing can
+  // move adjacent cards without overlap or a vertical layout change.
+  if (!CARD_TRAILERS_ENABLED || !card || !media || !card.closest(".row-track")) return;
   const layer = hoverTrailerLayer();
   if (!layer) return;
 
   card.addEventListener("mouseenter", () => {
-    if (hoverTrailerCard === card && layer.classList.contains("visible")) return;
+    if (hoverTrailerCard === card && card.classList.contains("trailer-expanded")) return;
     if (hoverTrailerCard && hoverTrailerCard !== card) stopHoverTrailer(hoverTrailerCard);
+    if (card.classList.contains("trailer-collapsing") || card.classList.contains("trailer-returning")) {
+      resetHoverTrailerImmediately(card);
+    }
     if (hoverTrailerTimer) clearTimeout(hoverTrailerTimer);
 
     hoverTrailerCard = card;
     positionHoverTrailer(card);
     const requestId = ++hoverTrailerRequestId;
+    const videoIdPromise = getTrailerVideoId(media);
     hoverTrailerTimer = window.setTimeout(async () => {
       hoverTrailerTimer = 0;
-      const videoId = await getTrailerVideoId(media);
+      const videoId = await videoIdPromise;
       if (
         requestId !== hoverTrailerRequestId ||
         hoverTrailerCard !== card ||
@@ -3110,25 +3136,25 @@ function bindHoverTrailer(card, media) {
       frame.setAttribute("referrerpolicy", "strict-origin-when-cross-origin");
       frame.dataset.trailerRevealed = "0";
       frame._trailerReveal = () => {
-        if (requestId !== hoverTrailerRequestId || hoverTrailerCard !== card || !card.matches(":hover")) {
+        if (hoverTrailerDisplayCard !== card || !card.isConnected) {
           frame.remove();
           return;
         }
-        positionHoverTrailer(card);
         layer.setAttribute("aria-hidden", "false");
-        layer.classList.add("visible");
+        layer.classList.add("visible", "playing");
         updateTrailerSoundButtons();
         if (!trailersMuted) trailerFrameCommand(frame, "unMute");
       };
       frame._trailerHide = () => {
-        layer.classList.remove("visible");
-        layer.setAttribute("aria-hidden", "true");
+        layer.classList.remove("playing");
       };
       frame.onload = () => listenToTrailerFrame(frame);
       frame.src = trailerEmbedUrl(videoId);
 
       const video = document.createElement("div");
       video.className = "hover-trailer-video";
+      const previewArtwork = getMediaBackdrop(media) || getMediaPoster(media);
+      if (previewArtwork) video.style.backgroundImage = `url("${previewArtwork}")`;
 
       const soundToggle = document.createElement("button");
       soundToggle.className = "trailer-sound-toggle hover-trailer-sound-toggle";
@@ -3140,89 +3166,27 @@ function bindHoverTrailer(card, media) {
       });
 
       video.append(frame, soundToggle);
-
-      const details = document.createElement("div");
-      details.className = "hover-trailer-details";
-
-      const title = document.createElement("div");
-      title.className = "hover-trailer-title";
-      title.textContent = card.querySelector(".card-title, .continue-title")?.textContent?.trim() || getMediaName(media);
-
-      const meta = document.createElement("div");
-      meta.className = "hover-trailer-meta";
-      const metaParts = [...card.querySelectorAll(".card-meta, .continue-episode, .continue-time")]
-        .map(item => item.textContent.trim())
-        .filter(Boolean);
-      meta.textContent = metaParts.join(" · ");
-
-      const actions = document.createElement("div");
-      actions.className = "hover-trailer-actions";
-
-      const playButton = document.createElement("button");
-      playButton.className = "hover-trailer-action hover-trailer-play";
-      playButton.type = "button";
-      playButton.innerHTML = `${ICONS.play}<span>Play</span>`;
-      playButton.setAttribute("aria-label", `Play ${getMediaName(media)}`);
-      playButton.addEventListener("click", event => {
-        event.stopPropagation();
-        stopHoverTrailer(card);
-        const saved = getSavedPlayback(getImdbId(media));
-        if (saved) {
-          resumeHistoryEntry(saved);
-        } else if (getMediaType(media) === "movie") {
-          openMovie(media);
-        } else {
-          openEpisode(media, 1, 1);
-        }
-      });
-
-      const saveButton = document.createElement("button");
-      const alreadySaved = state.watchLater.some(item => item.imdbId === getImdbId(media));
-      saveButton.className = `hover-trailer-action hover-trailer-save${alreadySaved ? " saved" : ""}`;
-      saveButton.type = "button";
-      saveButton.innerHTML = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span>${alreadySaved ? "Saved" : "Watch later"}</span>`;
-      saveButton.setAttribute("aria-label", `Add ${getMediaName(media)} to Watch Later`);
-      saveButton.addEventListener("click", async event => {
-        event.stopPropagation();
-        if (!state.user) {
-          stopHoverTrailer(card);
-          openAuthModal("signin");
-          return;
-        }
-        state.modalMedia = media;
-        await toggleModalWatchLater();
-        const saved = state.watchLater.some(item => item.imdbId === getImdbId(media));
-        saveButton.classList.toggle("saved", saved);
-        saveButton.querySelector("span").textContent = saved ? "Saved" : "Watch later";
-      });
-
-      actions.append(playButton, saveButton);
-
-      details.append(title);
-      if (meta.textContent) details.append(meta);
-      details.append(actions);
-      layer.replaceChildren(video, details);
+      layer.replaceChildren(video);
+      if (hoverTrailerDisplayCard && hoverTrailerDisplayCard !== card) {
+        resetHoverTrailerImmediately(hoverTrailerDisplayCard);
+      }
+      positionHoverTrailer(card);
+      card.insertBefore(layer, card.querySelector(".card-body-inline"));
+      hoverTrailerDisplayCard = card;
+      card.classList.add("trailer-expanded");
+      layer.setAttribute("aria-hidden", "false");
+      window.requestAnimationFrame(() => layer.classList.add("visible"));
+      window.setTimeout(refreshAllRowArrows, 340);
+      updateTrailerSoundButtons();
     }, HOVER_TRAILER_DELAY_MS);
   });
 
-  card.addEventListener("mouseleave", event => {
-    const nextTarget = event.relatedTarget;
-    if (nextTarget instanceof Node && layer.contains(nextTarget)) return;
-    stopHoverTrailer(card);
-  });
+  card.addEventListener("mouseleave", () => stopHoverTrailer(card));
 }
 
 window.addEventListener("resize", () => {
-  if (hoverTrailerCard && hoverTrailerPreview.classList.contains("visible")) {
-    positionHoverTrailer(hoverTrailerCard);
-  }
+  if (hoverTrailerDisplayCard?.classList.contains("trailer-expanded")) positionHoverTrailer(hoverTrailerDisplayCard);
 });
-
-document.addEventListener("scroll", () => {
-  if (hoverTrailerCard && hoverTrailerPreview.classList.contains("visible")) {
-    positionHoverTrailer(hoverTrailerCard);
-  }
-}, true);
 
 function updateTrailerSoundButtons() {
   const icon = trailersMuted ? ICONS.volumeOff : ICONS.volumeOn;

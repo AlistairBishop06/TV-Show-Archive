@@ -3340,8 +3340,7 @@ select:focus {
 
   
 
-/* Desktop card trailer previews. The panel lives directly under <body> so
-   carousel overflow cannot clip it, and pointer-events stay on the card. */
+/* Desktop card trailer preview shared by whichever card is active. */
 .hover-trailer-preview {
   position: fixed;
   top: 0;
@@ -5287,9 +5286,8 @@ body:is([data-page="profile"], [data-page="discover"], [data-page="search"], [da
 .row-scroller { position: relative; margin-inline: calc(var(--shell-gutter) * -1); }
 
 .row-track {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: var(--poster-width);
+  display: flex;
+  align-items: flex-start;
   gap: clamp(10px, 1vw, 16px);
   overflow-x: auto;
   overflow-y: hidden;
@@ -5301,6 +5299,25 @@ body:is([data-page="profile"], [data-page="discover"], [data-page="search"], [da
 }
 
 .row-track::-webkit-scrollbar { display: none; }
+
+.row-track > .row-card {
+  width: var(--poster-width);
+  min-width: var(--poster-width);
+  flex: 0 0 var(--poster-width);
+  scroll-snap-align: start;
+  transition: width 320ms var(--ease-out), min-width 320ms var(--ease-out), flex-basis 320ms var(--ease-out), transform var(--transition-ui);
+}
+
+.row-track > .row-card.trailer-expanded {
+  width: var(--trailer-card-width, min(480px, 78vw));
+  min-width: var(--trailer-card-width, min(480px, 78vw));
+  flex-basis: var(--trailer-card-width, min(480px, 78vw));
+}
+
+.row-track > .row-card:is(.trailer-expanded, .trailer-collapsing) .hover-trailer-video {
+  height: var(--trailer-card-height);
+  aspect-ratio: auto;
+}
 
 .row-arrow {
   position: absolute;
@@ -5476,13 +5493,15 @@ body:is([data-page="profile"], [data-page="discover"], [data-page="search"], [da
 
 /* 07. Expanded desktop trailer preview ---------------------------------- */
 .hover-trailer-preview {
-  z-index: 1100;
-  width: min(480px, calc(100vw - 32px));
+  position: relative;
+  inset: auto;
+  z-index: 1;
+  width: 100%;
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,.16);
-  border-radius: 12px;
-  background: #101218;
-  box-shadow: 0 26px 80px rgba(0,0,0,.76), 0 0 0 1px rgba(0,0,0,.25);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  box-shadow: var(--shadow-card);
   opacity: 0;
   transform: translateY(5px) scale(.94);
   transition: opacity 190ms ease, transform 260ms var(--ease-out);
@@ -5493,7 +5512,40 @@ body:is([data-page="profile"], [data-page="discover"], [data-page="search"], [da
   transform: translateY(0) scale(1);
 }
 
-.hover-trailer-video { aspect-ratio: 16 / 9; background: #030405; }
+.trailer-expanded,
+.trailer-collapsing {
+  overflow: visible;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.trailer-expanded > .poster,
+.trailer-collapsing > .poster { display: none; }
+
+.trailer-returning > .poster {
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.trailer-returning.thumbnail-visible > .poster { opacity: 1; }
+
+.hover-trailer-video {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background-color: #030405;
+  background-position: center;
+  background-size: cover;
+}
+
+.hover-trailer-video iframe {
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+
+.hover-trailer-preview.playing .hover-trailer-video iframe { opacity: 1; }
 
 .hover-trailer-details {
   min-height: 104px;
@@ -5539,6 +5591,15 @@ body:is([data-page="profile"], [data-page="discover"], [data-page="search"], [da
 .hover-trailer-play { border-color: var(--accent); background: var(--accent); color: #fff; }
 .hover-trailer-play:hover { border-color: #f14b4e; background: #f14b4e; }
 .hover-trailer-save.saved { border-color: rgba(104,213,150,.45); color: var(--success); }
+
+.grid .hover-trailer-actions,
+.library-grid .hover-trailer-actions { flex-wrap: wrap; }
+
+.grid .hover-trailer-action,
+.library-grid .hover-trailer-action {
+  flex: 1 1 100%;
+  justify-content: center;
+}
 
 /* 08. Continue Watching -------------------------------------------------- */
 .continue-section {

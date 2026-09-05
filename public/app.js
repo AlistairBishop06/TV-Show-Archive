@@ -389,6 +389,26 @@ const playerEpisodeBadge = el("playerEpisodeBadge");
 const playerEpisodeTitle = el("playerEpisodeTitle");
 const playerDetailsMeta = el("playerDetailsMeta");
 const playerDescription = el("playerDescription");
+const playerDescriptionGrid = document.createElement("div");
+playerDescriptionGrid.className = "player-description-grid";
+const playerSeriesDescriptionBlock = document.createElement("section");
+playerSeriesDescriptionBlock.className = "player-description-block";
+const playerSeriesDescriptionLabel = document.createElement("h3");
+playerSeriesDescriptionLabel.className = "player-description-label";
+playerSeriesDescriptionLabel.textContent = "About the series";
+const playerEpisodeDescriptionBlock = document.createElement("section");
+playerEpisodeDescriptionBlock.className = "player-description-block player-episode-description-block";
+const playerEpisodeDescriptionLabel = document.createElement("h3");
+playerEpisodeDescriptionLabel.className = "player-description-label";
+playerEpisodeDescriptionLabel.textContent = "About this episode";
+const playerEpisodeDescription = document.createElement("p");
+playerEpisodeDescription.id = "playerEpisodeDescription";
+if (playerDescription) {
+  playerDescription.before(playerDescriptionGrid);
+  playerSeriesDescriptionBlock.append(playerSeriesDescriptionLabel, playerDescription);
+  playerEpisodeDescriptionBlock.append(playerEpisodeDescriptionLabel, playerEpisodeDescription);
+  playerDescriptionGrid.append(playerSeriesDescriptionBlock, playerEpisodeDescriptionBlock);
+}
 const playerComments = el("playerComments");
 const playerSeriesComment = el("playerSeriesComment");
 const playerSeriesCommentStatus = el("playerSeriesCommentStatus");
@@ -4715,6 +4735,22 @@ function presentPlayerTitle(media, playbackState = {}, subtitle = "") {
   playerDetailsMeta.textContent = playerDetailsMetadata(media, playbackState, subtitle);
 }
 
+function presentPlayerDescriptions(media, playbackState = {}) {
+  const isTv = playbackState.mediaType === "tv";
+  playerSeriesDescriptionLabel.textContent = isTv ? "About the series" : "About the film";
+  playerDescription.textContent = getMediaSummary(media) ||
+    (isTv ? "Series description unavailable." : "Movie description unavailable.");
+  playerEpisodeDescriptionBlock.hidden = !isTv;
+  playerDescriptionGrid.classList.toggle("single", !isTv);
+
+  if (isTv) {
+    playerEpisodeDescription.textContent = stripHtml(playbackState.episodeSummary || "") ||
+      "Episode description unavailable.";
+  } else {
+    playerEpisodeDescription.textContent = "";
+  }
+}
+
 function playerEpisodeImageMarkup(show, episode) {
   const image = episode?.image?.medium || episode?.image?.original || getMediaBackdrop(show);
   if (!image) {
@@ -4737,6 +4773,7 @@ function renderPlayerEpisodeList(show, season, currentEpisode) {
   playerEpisodeList.innerHTML = episodes.map(episode => {
     const active = Number(episode.number) === Number(currentEpisode);
     const runtime = Number(episode.runtime) > 0 ? `${Number(episode.runtime)} min` : "Episode";
+    const description = stripHtml(episode.summary || "") || "Episode description unavailable.";
     return `
       <button class="player-episode-item${active ? " active" : ""}" type="button"
         data-player-season="${Number(season)}" data-player-episode="${Number(episode.number)}"
@@ -4748,6 +4785,7 @@ function renderPlayerEpisodeList(show, season, currentEpisode) {
         </span>
         <span class="player-episode-copy">
           <strong>${escapeHtml(episode.name || `Episode ${episode.number}`)}</strong>
+          <span class="player-episode-description">${escapeHtml(description)}</span>
           <span>S${Number(season)} E${Number(episode.number)} · ${escapeHtml(runtime)}</span>
         </span>
       </button>`;
@@ -4826,8 +4864,7 @@ function configurePlayerExperience(media, playbackState = {}, subtitle = "") {
   playerDetails.hidden = false;
   playerDetailsEyebrow.textContent = mode === "tv" ? "Now watching" : "Feature film";
   presentPlayerTitle(media, playbackState, subtitle);
-  playerDescription.textContent = getMediaSummary(media) ||
-    (mode === "tv" ? "Show description unavailable." : "Movie description unavailable.");
+  presentPlayerDescriptions(media, playbackState);
 
   if (mode === "tv") {
     playerComments.hidden = false;
@@ -4958,7 +4995,9 @@ function syncActiveTvEpisode(season, episode) {
 
   const episodeData = findKnownEpisode(active.media, season, episode);
   const episodeName = episodeData?.name || "";
+  const episodeSummary = stripHtml(episodeData?.summary || "");
   active.episodeName = episodeName;
+  active.episodeSummary = episodeSummary;
   active.episodeRuntime = episodeData?.runtime || null;
 
   playerTitle.textContent = getMediaName(active.media);
@@ -4970,9 +5009,14 @@ function syncActiveTvEpisode(season, episode) {
     season,
     episode,
     episodeName,
+    episodeSummary,
     episodeRuntime: episodeData?.runtime,
     startAt: 0
   }, playerSubtitle.textContent);
+  presentPlayerDescriptions(active.media, {
+    mediaType: "tv",
+    episodeSummary
+  });
   loadPlayerComments(active.media, season, episode);
   if (playerSeasonSelect?.querySelector(`option[value="${season}"]`)) {
     playerSeasonSelect.value = String(season);
@@ -4990,31 +5034,39 @@ function syncActiveTvEpisode(season, episode) {
   entry.lastWatched = Date.now();
   saveWatchEntry(entry);
 
-  if (!episodeName) {
+  if (!episodeName || !episodeSummary) {
     const mediaAtLookup = active.media;
     void resolveEpisodeData(mediaAtLookup, season, episode).then(resolved => {
       const resolvedName = String(resolved?.name || "").trim();
+      const resolvedSummary = stripHtml(resolved?.summary || "");
       const current = state.activePlayback;
-      if (!resolvedName || !current || current.mediaType !== "tv" ||
+      if ((!resolvedName && !resolvedSummary) || !current || current.mediaType !== "tv" ||
           !isSameTvShow(current.media, mediaAtLookup) ||
           Number(current.season) !== season || Number(current.episode) !== episode) {
         return;
       }
 
-      current.episodeName = resolvedName;
+      current.episodeName = resolvedName || current.episodeName;
+      current.episodeSummary = resolvedSummary || current.episodeSummary;
       current.episodeRuntime = resolved?.runtime || current.episodeRuntime;
-      playerSubtitle.textContent = `Season ${season} · Episode ${episode} · ${resolvedName}`;
+      playerSubtitle.textContent = `Season ${season} · Episode ${episode}` +
+        (current.episodeName ? ` · ${current.episodeName}` : "");
       presentPlayerTitle(current.media, {
         mediaType: "tv",
         season,
         episode,
-        episodeName: resolvedName,
+        episodeName: current.episodeName,
+        episodeSummary: current.episodeSummary,
         episodeRuntime: resolved?.runtime,
         startAt: 0
       }, playerSubtitle.textContent);
+      presentPlayerDescriptions(current.media, {
+        mediaType: "tv",
+        episodeSummary: current.episodeSummary
+      });
       const saved = getSavedPlayback(getImdbId(mediaAtLookup));
       if (saved && Number(saved.season) === season && Number(saved.episode) === episode &&
-          saved.episodeName !== resolvedName) {
+          resolvedName && saved.episodeName !== resolvedName) {
         setWatchHistory(getWatchHistory().map(item =>
           item.imdbId === saved.imdbId ? { ...item, episodeName: resolvedName } : item
         ));
@@ -5129,6 +5181,7 @@ async function openEpisode(show, season, episode, options = {}) {
     ]);
     const episodeName = String(episodeData?.name ||
       (isSameEpisode ? existing?.episodeName : "") || "").trim();
+    const episodeSummary = stripHtml(episodeData?.summary || "");
 
     const watchEntry = makeWatchEntry(show, {
       mediaType: "tv",
@@ -5150,6 +5203,7 @@ async function openEpisode(show, season, episode, options = {}) {
         season: Number(season),
         episode: Number(episode),
         episodeName,
+        episodeSummary,
         episodeRuntime: episodeData?.runtime,
         startAt,
         source: playback.source,

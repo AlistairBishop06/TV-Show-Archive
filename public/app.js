@@ -217,6 +217,8 @@ const ICONS = {
   chevronLeft: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
   chevronRight: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>',
   play: '<svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+  fullscreen: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/></svg>',
+  fullscreenExit: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v5H3M16 3v5h5M21 16h-5v5M3 16h5v5"/></svg>',
   volumeOn: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18 6a8.5 8.5 0 0 1 0 12"/></svg>',
   volumeOff: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>'
 };
@@ -369,6 +371,14 @@ const episodeGrid = el("episodeGrid");
 const continueButton = el("continueButton");
 const playerScreen = el("playerScreen");
 const playerFrame = el("playerFrame");
+const playerFrameWrap = playerFrame?.parentElement;
+const playerFullscreenButton = document.createElement("button");
+playerFullscreenButton.className = "player-fullscreen-button";
+playerFullscreenButton.type = "button";
+playerFullscreenButton.innerHTML = ICONS.fullscreen;
+playerFullscreenButton.setAttribute("aria-label", "Enter fullscreen");
+playerFullscreenButton.title = "Fullscreen";
+playerFrameWrap?.appendChild(playerFullscreenButton);
 const playerTitle = el("playerTitle");
 const playerSubtitle = el("playerSubtitle");
 const playerWatchShell = el("playerWatchShell");
@@ -5354,7 +5364,36 @@ function stopPlayerFrame() {
   if (frameWrap) frameWrap.appendChild(playerFrame);
 }
 
+function syncPlayerFullscreenButton() {
+  const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
+  const active = fullscreenElement === playerFrameWrap;
+  playerFullscreenButton.innerHTML = active ? ICONS.fullscreenExit : ICONS.fullscreen;
+  playerFullscreenButton.setAttribute("aria-label", active ? "Exit fullscreen" : "Enter fullscreen");
+  playerFullscreenButton.title = active ? "Exit fullscreen" : "Fullscreen";
+}
+
+async function togglePlayerFullscreen() {
+  if (!playerFrameWrap || !playerScreen.classList.contains("live-mode")) return;
+  try {
+    const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
+    if (fullscreenElement) {
+      const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
+      await exitFullscreen?.call(document);
+    } else {
+      const requestFullscreen = playerFrameWrap.requestFullscreen || playerFrameWrap.webkitRequestFullscreen;
+      await requestFullscreen?.call(playerFrameWrap);
+    }
+  } catch (error) {
+    console.warn("Could not change livestream fullscreen mode", error);
+  }
+}
+
 function closePlayer({ resetRoute = true } = {}) {
+  const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
+  if (fullscreenElement === playerFrameWrap) {
+    const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
+    Promise.resolve(exitFullscreen?.call(document)).catch(() => {});
+  }
   syncActivePlaybackOnExit();
   cancelPlayerLoadWatchdog();
   playerScreen.classList.remove("open");
@@ -5617,6 +5656,9 @@ document.addEventListener("click", event => {
 
 el("closeModal").addEventListener("click", closeModal);
 el("playerBack").addEventListener("click", () => closePlayer());
+playerFullscreenButton.addEventListener("click", togglePlayerFullscreen);
+document.addEventListener("fullscreenchange", syncPlayerFullscreenButton);
+document.addEventListener("webkitfullscreenchange", syncPlayerFullscreenButton);
 profilePlaybackSource.addEventListener("change", saveProfilePlaybackSource);
 profileSourceSwitching.addEventListener("change", saveProfileSourceSwitching);
 

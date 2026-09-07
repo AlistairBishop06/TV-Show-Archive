@@ -7646,6 +7646,20 @@ html.player-open header {
   transform: translateY(0);
 }
 
+/* Touch screens have no persistent hover state, so keep the control visible
+   and large enough to tap without covering the provider's lower controls. */
+@media (hover: none), (pointer: coarse) {
+  .player-screen.live-mode .player-fullscreen-button {
+    display: grid;
+    width: 50px;
+    height: 50px;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+}
+
 .player-frame-wrap:fullscreen,
 .player-frame-wrap:-webkit-full-screen {
   width: 100vw !important;

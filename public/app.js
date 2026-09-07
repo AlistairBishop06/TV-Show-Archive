@@ -144,6 +144,9 @@ const hoverTrailerPreview = document.createElement("div");
 hoverTrailerPreview.className = "hover-trailer-preview";
 hoverTrailerPreview.setAttribute("aria-hidden", "true");
 const HOME_PAGE_BATCH = 1;
+const CATALOGUE_CACHE_KEY = "tvarchive-catalogue-cache-v1";
+const CATALOGUE_CACHE_TTL_MS = 15 * 60 * 1000;
+const PUBLIC_REQUEST_TIMEOUT_MS = 12000;
 const WATCH_HISTORY_KEY = "showhub-watch-history-v2";
 const PENDING_WATCH_HISTORY_KEY_PREFIX = "showhub-pending-watch-progress-v1";
 const AUTH_TOKEN_KEY = "showhub-auth-token-v1";
@@ -1832,7 +1835,8 @@ async function restoreAccountSession() {
   try {
     const data = await apiFetch("/api/auth/me");
     setAccountUser(data?.user || null);
-    if (state.user) await syncWatchHistoryFromAccount();
+    // Keep account history fresh without delaying the page's first render.
+    if (state.user) void syncWatchHistoryFromAccount();
   } catch (error) {
     if (error.status === 401) clearAuthSession();
     else {
@@ -2530,7 +2534,14 @@ function bindCardOpeners(container, items) {
 }
 
 async function fetchJson(url) {
-  const response = await fetch(url);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), PUBLIC_REQUEST_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(url, { signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
@@ -2542,6 +2553,44 @@ async function fetchJson(url) {
   }
 
   return data;
+}
+
+function saveCatalogueCache() {
+  try {
+    sessionStorage.setItem(CATALOGUE_CACHE_KEY, JSON.stringify({
+      savedAt: Date.now(),
+      homeShows: state.homeShows,
+      homeMovies: state.homeMovies,
+      nextHomePage: state.nextHomePage,
+      nextMovieSkip: state.nextMovieSkip,
+      tvHasMore: state.tvHasMore,
+      movieHasMore: state.movieHasMore
+    }));
+  } catch {
+    // The catalogue still works normally if browser storage is unavailable.
+  }
+}
+
+function restoreCatalogueCache() {
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(CATALOGUE_CACHE_KEY) || "null");
+    if (!cached || Date.now() - Number(cached.savedAt || 0) > CATALOGUE_CACHE_TTL_MS ||
+        !Array.isArray(cached.homeShows) || !Array.isArray(cached.homeMovies)) {
+      return false;
+    }
+
+    state.homeShows = normaliseShows(cached.homeShows);
+    state.homeMovies = normaliseMovies(cached.homeMovies);
+    if (!state.homeShows.length && !state.homeMovies.length) return false;
+    state.nextHomePage = Math.max(0, Number(cached.nextHomePage) || 0);
+    state.nextMovieSkip = Math.max(0, Number(cached.nextMovieSkip) || 0);
+    state.tvHasMore = cached.tvHasMore !== false;
+    state.movieHasMore = cached.movieHasMore !== false;
+    state.initialCatalogueLoaded = true;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ---- Genre row rendering (the Netflix/Prime-style browsing surface) ----
@@ -2868,6 +2917,7 @@ async function loadHomeBatch({ render = true } = {}) {
     } else {
       state.homeShows = [...state.homeShows, ...incoming];
     }
+    saveCatalogueCache();
   } catch (error) {
     if (error?.status === 404) {
       state.tvHasMore = false;
@@ -2910,6 +2960,7 @@ async function loadMovieBatch({ render = true } = {}) {
 
       state.nextMovieSkip += incoming.length;
       if (!uniqueIncoming.length) state.movieHasMore = false;
+      saveCatalogueCache();
     }
   } catch (error) {
     console.error(error);
@@ -2963,13 +3014,9 @@ async function loadInitialCatalogue() {
   catalogueActions.style.display = "none";
   renderRows();
 
-  // Fetch a few batches up front so there's enough data to bucket into
-  // genre rows right away, rather than showing one thin row at a time.
+  // The two catalogues are independent, so start them together.
   await Promise.allSettled([
     loadHomeBatch({ render: false }),
-    loadHomeBatch({ render: false }),
-    loadHomeBatch({ render: false }),
-    loadMovieBatch({ render: false }),
     loadMovieBatch({ render: false })
   ]);
 
@@ -2978,6 +3025,15 @@ async function loadInitialCatalogue() {
 
   renderCatalogue();
   renderContinueWatching();
+}
+
+async function refreshCachedCatalogue() {
+  await Promise.allSettled([
+    loadHomeBatch({ render: false }),
+    loadMovieBatch({ render: false })
+  ]);
+  if (state.activeCollection) renderActiveCollection();
+  else renderCatalogue();
 }
 
 function youtubeVideoId(value) {
@@ -5420,7 +5476,7 @@ function stopPlayerFrame() {
 
 function syncPlayerFullscreenButton() {
   const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
-  const active = fullscreenElement === playerFrameWrap;
+  const active = fullscreenElement === playerFrameWrap || fullscreenElement === playerFrame;
   playerFullscreenButton.innerHTML = active ? ICONS.fullscreenExit : ICONS.fullscreen;
   playerFullscreenButton.setAttribute("aria-label", active ? "Exit fullscreen" : "Enter fullscreen");
   playerFullscreenButton.title = active ? "Exit fullscreen" : "Fullscreen";
@@ -5434,8 +5490,25 @@ async function togglePlayerFullscreen() {
       const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
       await exitFullscreen?.call(document);
     } else {
-      const requestFullscreen = playerFrameWrap.requestFullscreen || playerFrameWrap.webkitRequestFullscreen;
-      await requestFullscreen?.call(playerFrameWrap);
+      // Android browsers can fullscreen an allowed iframe directly, whereas
+      // desktop browsers are more consistent fullscreening the surrounding
+      // player. Try the platform-appropriate target, then the other option.
+      const prefersIframeFullscreen = window.matchMedia("(hover: none), (pointer: coarse)").matches;
+      const targets = prefersIframeFullscreen
+        ? [playerFrame, playerFrameWrap]
+        : [playerFrameWrap, playerFrame];
+      let lastError = null;
+      for (const target of targets) {
+        const requestFullscreen = target?.requestFullscreen || target?.webkitRequestFullscreen;
+        if (!requestFullscreen) continue;
+        try {
+          await requestFullscreen.call(target);
+          return;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      if (lastError) throw lastError;
     }
   } catch (error) {
     console.warn("Could not change livestream fullscreen mode", error);
@@ -5444,7 +5517,7 @@ async function togglePlayerFullscreen() {
 
 function closePlayer({ resetRoute = true } = {}) {
   const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
-  if (fullscreenElement === playerFrameWrap) {
+  if (fullscreenElement === playerFrameWrap || fullscreenElement === playerFrame) {
     const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
     Promise.resolve(exitFullscreen?.call(document)).catch(() => {});
   }
@@ -5944,7 +6017,23 @@ async function initialiseTVArchive() {
   renderContinueWatching();
   catalogueActions.style.display = "none";
 
-  await restoreAccountSession();
+  // Account validation and public catalogue loading do not depend on one
+  // another. Starting both together avoids serial network waits on every
+  // navigation between the separate site pages.
+  const accountSession = restoreAccountSession();
+  const needsCatalogue = !["discover", "profile", "auth", "search"].includes(APP_PAGE) &&
+    state.typeScope !== "live";
+  let catalogueLoad = null;
+  if (needsCatalogue) {
+    if (restoreCatalogueCache()) {
+      renderCatalogue();
+      void refreshCachedCatalogue();
+    } else {
+      catalogueLoad = loadInitialCatalogue();
+    }
+  }
+
+  await accountSession;
 
   if (APP_PAGE === "discover") {
     await openDiscoverPage();
@@ -5984,7 +6073,7 @@ async function initialiseTVArchive() {
     return;
   }
 
-  await loadInitialCatalogue();
+  await catalogueLoad;
 
   if (APP_PAGE === "collection") {
     const descriptor = {

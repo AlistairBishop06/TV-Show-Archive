@@ -4230,6 +4230,7 @@ select:focus {
 .live-directory-card .dl-schedule-shell {
   border: 0;
   border-radius: 0;
+  overflow: visible;
   background: transparent;
 }
 
@@ -4277,6 +4278,42 @@ select:focus {
   border-radius: 50%;
   background: #4fd28a;
   box-shadow: 0 0 0 3px rgba(79,210,138,.09);
+}
+
+.favourite-teams-control { position: relative; margin-top: 18px; }
+.favourite-teams-heading { display: flex; align-items: baseline; gap: 12px; margin-bottom: 9px; }
+.favourite-teams-heading span { color: #f5f6f8; font-size: 13px; font-weight: 750; }
+.favourite-teams-heading small, .favourite-teams-message { color: #8d96a3; font-size: 11px; }
+.favourite-teams-toggle { display: flex; align-items: center; justify-content: space-between; gap: 22px; min-width: 210px; min-height: 42px; padding: 0 14px; border: 1px solid rgba(255,255,255,.13); border-radius: 11px; background: #111720; color: #f5f6f8; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.favourite-teams-toggle:hover, .favourite-teams-toggle:focus-visible { border-color: rgba(236,53,56,.7); outline: none; }
+.favourite-teams-dropdown { position: absolute; z-index: 20; top: 71px; left: 0; width: min(380px, 100%); padding: 13px; border: 1px solid rgba(255,255,255,.17); border-radius: 13px; background: #151b25; box-shadow: 0 18px 42px rgba(0,0,0,.52); }
+.favourite-teams-dropdown[hidden] { display: none; }
+.favourite-teams-dropdown label { display: block; margin-bottom: 7px; color: #aab2be; font-size: 11px; }
+.favourite-teams-dropdown input { width: 100%; height: 40px; padding: 0 11px; border: 1px solid rgba(255,255,255,.16); border-radius: 9px; outline: none; background: #0e131b; color: #fff; font: inherit; }
+.favourite-teams-dropdown input:focus { border-color: #ec3538; }
+.favourite-teams-results { max-height: 250px; overflow-y: auto; padding-top: 8px; color: #9ca5b1; font-size: 11px; }
+.favourite-team-option { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 8px; background: transparent; color: #f5f6f8; text-align: left; cursor: pointer; }
+.favourite-team-option:hover:not(:disabled) { background: rgba(255,255,255,.08); }
+.favourite-team-option:disabled { opacity: .6; cursor: default; }
+.favourite-team-option > span:nth-child(2) { display: grid; flex: 1; min-width: 0; gap: 2px; }
+.favourite-team-option strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.favourite-team-option small { color: #9099a6; }
+.favourite-team-option > span:last-child { color: #ef6264; }
+.favourite-teams-selected { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.favourite-team-chip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 4px 5px 4px 7px; border: 1px solid rgba(236,53,56,.3); border-radius: 20px; background: rgba(236,53,56,.1); color: #f5f6f8; font-size: 11px; }
+.favourite-team-chip > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.favourite-team-chip button { width: 22px; height: 22px; border: 0; border-radius: 50%; background: transparent; color: #d6d9de; font-size: 17px; cursor: pointer; }
+.favourite-team-chip button:hover { background: rgba(255,255,255,.13); }
+.favourite-team-option img, .favourite-team-chip img, .favourite-team-fallback { width: 28px; height: 28px; flex: 0 0 28px; object-fit: contain; }
+.favourite-team-fallback { display: grid; place-items: center; border-radius: 50%; background: #313a48; color: #fff; font-weight: 800; }
+.favourite-team-chip img, .favourite-team-chip .favourite-team-fallback { width: 22px; height: 22px; flex-basis: 22px; }
+.favourite-teams-message { min-height: 16px; margin-top: 5px; }
+.dl-sport-favourites .dl-group-accent { background: #ec3538; }
+.dl-event-team-badge { display: inline-flex; vertical-align: middle; margin-right: 6px; }
+.dl-event-team-badge img, .dl-event-team-badge .favourite-team-fallback { width: 22px; height: 22px; flex-basis: 22px; }
+@media (max-width: 600px) {
+  .favourite-teams-heading { flex-wrap: wrap; gap: 3px 10px; }
+  .favourite-teams-dropdown { top: 82px; }
 }
 
 .live-directory-card .dl-schedule-filter-head {

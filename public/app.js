@@ -297,6 +297,9 @@ const state = {
   dlstreamsScheduleLoading: false,
   dlstreamsScheduleQuery: "",
   dlstreamsScheduleCategory: "all",
+  favouriteTeams: [],
+  favouriteTeamsLoadedFor: null,
+  favouriteTeamsRevision: 0,
   lastProgressWrite: 0,
   pendingEpisodeAdvance: false,
   episodeAdvanceInFlight: false,
@@ -461,6 +464,12 @@ const liveSportsAllPanel = el("liveSportsAllPanel");
 const liveSportsAllReload = el("liveSportsAllReload");
 const liveSportsAllMeta = el("liveSportsAllMeta");
 const liveSportsAllSearch = el("liveSportsAllSearch");
+const favouriteTeamsToggle = el("favouriteTeamsToggle");
+const favouriteTeamsDropdown = el("favouriteTeamsDropdown");
+const favouriteTeamsSearch = el("favouriteTeamsSearch");
+const favouriteTeamsResults = el("favouriteTeamsResults");
+const favouriteTeamsSelected = el("favouriteTeamsSelected");
+const favouriteTeamsMessage = el("favouriteTeamsMessage");
 const liveSportsAllCategories = el("liveSportsAllCategories");
 const liveSportsAllStatus = el("liveSportsAllStatus");
 const liveSportsAllContent = el("liveSportsAllContent");
@@ -1617,6 +1626,13 @@ async function saveProfileSourceSwitching() {
 function setAccountUser(user, { persist = true } = {}) {
   const previousUserId = state.user?.id || null;
   state.user = user || null;
+  if (String(previousUserId || "") !== String(state.user?.id || "")) {
+    state.favouriteTeams = [];
+    state.favouriteTeamsLoadedFor = null;
+    state.favouriteTeamsRevision += 1;
+    renderFavouriteTeams();
+    if (state.user && APP_PAGE === "live") void loadFavouriteTeams();
+  }
   if (persist) cacheAccountUser(state.user);
   closeAccountMenu();
 
@@ -3675,6 +3691,7 @@ function setLiveSportsView(view = "featured") {
   if (target === "all" && !state.dlstreamsSchedule && !state.dlstreamsScheduleLoading) {
     void loadAllLiveSportsSchedule();
   }
+  if (target === "all" && state.user) void loadFavouriteTeams();
 
   if (APP_PAGE === "live") {
     searchInput.disabled = target === "all";
@@ -3695,6 +3712,75 @@ function dlScheduleSearchText(event) {
     event?.event,
     ...(event?.channels || []).flatMap(channel => [channel?.name, channel?.id])
   ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function teamBadge(team) {
+  return /^https:\/\/(?:www\.|r2\.)?thesportsdb\.com\//i.test(team.badge || "")
+    ? `<img src="${escapeHtml(team.badge)}" alt="" loading="lazy" />`
+    : `<span class="favourite-team-fallback" aria-hidden="true">${escapeHtml(team.name.slice(0, 1))}</span>`;
+}
+
+function renderFavouriteTeams() {
+  if (!favouriteTeamsSelected) return;
+  favouriteTeamsSelected.innerHTML = state.favouriteTeams.map(team => `
+    <span class="favourite-team-chip">${teamBadge(team)}<span>${escapeHtml(team.name)}</span>
+      <button type="button" data-remove-team="${escapeHtml(team.id)}" aria-label="Remove ${escapeHtml(team.name)}">×</button>
+    </span>`).join("");
+  if (favouriteTeamsToggle) favouriteTeamsToggle.firstChild.textContent =
+    state.favouriteTeams.length ? `${state.favouriteTeams.length} favourite team${state.favouriteTeams.length === 1 ? "" : "s"} ` : "Choose teams ";
+}
+
+async function loadFavouriteTeams() {
+  const userId = state.user?.id;
+  if (!userId || state.favouriteTeamsLoadedFor === userId) return;
+  const revision = state.favouriteTeamsRevision;
+  try {
+    const data = await apiFetch("/api/account/favourite-teams");
+    if (state.user?.id !== userId || state.favouriteTeamsRevision !== revision) return;
+    state.favouriteTeams = data.teams || [];
+    state.favouriteTeamsLoadedFor = userId;
+    renderFavouriteTeams();
+    if (state.dlstreamsSchedule) renderAllLiveSportsSchedule();
+  } catch (error) {
+    if (favouriteTeamsMessage) favouriteTeamsMessage.textContent = "Could not load your favourite teams.";
+  }
+}
+
+async function saveFavouriteTeams(teams) {
+  if (!state.user) {
+    openAuthModal("signin");
+    return false;
+  }
+  const userId = state.user.id;
+  const revision = ++state.favouriteTeamsRevision;
+  try {
+    const data = await apiFetch("/api/account/favourite-teams", {
+      method: "PUT", body: JSON.stringify({ teams })
+    });
+    if (state.user?.id !== userId || state.favouriteTeamsRevision !== revision) return false;
+    state.favouriteTeams = data.teams;
+    state.favouriteTeamsLoadedFor = userId;
+    renderFavouriteTeams();
+    renderAllLiveSportsSchedule();
+    favouriteTeamsMessage.textContent = "Favourite teams saved.";
+    return true;
+  } catch (error) {
+    favouriteTeamsMessage.textContent = error.message || "Could not save favourite teams.";
+    return false;
+  }
+}
+
+function matchingFavouriteTeams(event) {
+  const title = String(event.event || "").toLowerCase();
+  return state.favouriteTeams.filter(team => {
+    const name = team.name.toLowerCase();
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|[^a-z0-9])${escaped}(?=$|[^a-z0-9])`, "i").test(title);
+  });
+}
+
+function eventHasFavouriteTeam(event) {
+  return matchingFavouriteTeams(event).length > 0;
 }
 
 const DL_SPORT_CATEGORIES = [
@@ -3804,12 +3890,16 @@ function renderAllLiveSportsSchedule() {
     return;
   }
 
-  const sections = availableCategories
+  const favouriteEvents = visibleEvents.filter(eventHasFavouriteTeam);
+  const sections = [
+    ...(favouriteEvents.length ? [{ key: "favourites", label: "Your teams", events: favouriteEvents }] : []),
+    ...availableCategories
     .map(category => ({
       ...category,
-      events: visibleEvents.filter(event => event.sport.key === category.key)
+      events: visibleEvents.filter(event => event.sport.key === category.key && !eventHasFavouriteTeam(event))
     }))
-    .filter(section => section.events.length);
+    .filter(section => section.events.length)
+  ];
 
   const visibleStreamCount = visibleEvents.reduce((sum, event) => sum + (event.channels || []).length, 0);
   const visibleSportCount = new Set(visibleEvents.map(event => event.sport.key)).size;
@@ -3837,7 +3927,7 @@ function renderAllLiveSportsSchedule() {
               <span>${section.events.length} event${section.events.length === 1 ? "" : "s"}</span>
             </div>
           </div>
-          <button class="dl-group-filter" type="button" data-dl-category-jump="${escapeHtml(section.key)}">View only ${escapeHtml(section.label)}</button>
+          ${section.key === "favourites" ? "" : `<button class="dl-group-filter" type="button" data-dl-category-jump="${escapeHtml(section.key)}">View only ${escapeHtml(section.label)}</button>`}
         </div>
         <div class="dl-schedule-event-list">
           ${section.events.map(event => {
@@ -3846,7 +3936,7 @@ function renderAllLiveSportsSchedule() {
             <article class="dl-schedule-event">
               <time class="dl-schedule-time"><span>${escapeHtml(event.time || "LIVE")}</span></time>
               <div class="dl-schedule-event-main">
-                <div class="dl-schedule-event-title">${escapeHtml(event.event || "Live event")}</div>
+                <div class="dl-schedule-event-title">${section.key === "favourites" ? matchingFavouriteTeams(event).map(team => `<span class="dl-event-team-badge">${teamBadge(team)}</span>`).join("") : ""}${escapeHtml(event.event || "Live event")}</div>
                 <div class="dl-schedule-event-subtitle">${channelCount} stream${channelCount === 1 ? "" : "s"} available</div>
               </div>
               <div class="dl-schedule-channels">
@@ -5806,6 +5896,66 @@ liveSportsAllReload?.addEventListener("click", reloadAllLiveSports);
 liveSportsAllSearch?.addEventListener("input", () => {
   state.dlstreamsScheduleQuery = liveSportsAllSearch.value;
   renderAllLiveSportsSchedule();
+});
+
+let favouriteSearchTimer = 0;
+let favouriteSearchRequest = 0;
+favouriteTeamsToggle?.addEventListener("click", () => {
+  const opening = favouriteTeamsDropdown.hidden;
+  favouriteTeamsDropdown.hidden = !opening;
+  favouriteTeamsToggle.setAttribute("aria-expanded", String(opening));
+  if (opening) {
+    if (state.user) void loadFavouriteTeams();
+    favouriteTeamsSearch.focus();
+  }
+});
+favouriteTeamsSearch?.addEventListener("input", () => {
+  clearTimeout(favouriteSearchTimer);
+  const request = ++favouriteSearchRequest;
+  const query = favouriteTeamsSearch.value.trim();
+  if (query.length < 2) {
+    favouriteTeamsResults.textContent = "Type at least two letters to search.";
+    return;
+  }
+  favouriteTeamsResults.textContent = "Searching teams…";
+  favouriteSearchTimer = setTimeout(async () => {
+    try {
+      const data = await apiFetch(`/api/sports/teams?q=${encodeURIComponent(query)}`);
+      if (request !== favouriteSearchRequest) return;
+      const teams = data.teams || [];
+      favouriteTeamsResults.innerHTML = teams.length ? teams.map(team => `
+        <button class="favourite-team-option" type="button" data-team-id="${escapeHtml(team.id)}"
+          ${state.favouriteTeams.some(saved => saved.id === team.id) ? "disabled" : ""}>
+          ${teamBadge(team)}<span><strong>${escapeHtml(team.name)}</strong><small>${escapeHtml(team.sport)}</small></span>
+          <span>${state.favouriteTeams.some(saved => saved.id === team.id) ? "Selected" : "Add"}</span>
+        </button>`).join("") : "No teams found. Try the full team name.";
+      favouriteTeamsResults.querySelectorAll("[data-team-id]").forEach(button => {
+        button.addEventListener("click", async () => {
+          const team = teams.find(item => item.id === button.dataset.teamId);
+          if (!team) return;
+          button.disabled = true;
+          if (await saveFavouriteTeams([...state.favouriteTeams, team])) {
+            favouriteTeamsSearch.value = "";
+            favouriteTeamsResults.textContent = "Type another team name to add more.";
+            favouriteTeamsSearch.focus();
+          } else button.disabled = false;
+        });
+      });
+    } catch (error) {
+      if (request === favouriteSearchRequest) favouriteTeamsResults.textContent = "Team search is unavailable right now.";
+    }
+  }, 350);
+});
+favouriteTeamsSelected?.addEventListener("click", async event => {
+  const button = event.target.closest("[data-remove-team]");
+  if (!button) return;
+  button.disabled = true;
+  if (!await saveFavouriteTeams(state.favouriteTeams.filter(team => team.id !== button.dataset.removeTeam))) button.disabled = false;
+});
+document.addEventListener("click", event => {
+  if (favouriteTeamsDropdown?.hidden || event.target.closest(".favourite-teams-control")) return;
+  favouriteTeamsDropdown.hidden = true;
+  favouriteTeamsToggle.setAttribute("aria-expanded", "false");
 });
 
 modalWrap.addEventListener("click", event => {

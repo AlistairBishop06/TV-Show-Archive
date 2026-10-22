@@ -9,7 +9,7 @@
   <title>Live Sports | TV Archive</title>
   <link rel="icon" type="image/png" href="./assets/tv-archive-icon.png" />
   <link rel="apple-touch-icon" href="./assets/tv-archive-icon.png" />
-  <link rel="stylesheet" href="./styles.css?v=20260907-1" />
+  <link rel="stylesheet" href="./styles.css?v=20261022-1" />
 </head>
 <body data-page="live">
   <header>
@@ -262,6 +262,17 @@
                 </label>
                 <div class="dl-schedule-source-note"><span></span>Updated from the live schedule</div>
               </div>
+              <div class="favourite-teams-control">
+                <div class="favourite-teams-heading"><span>Favourite teams</span><small>Games for your teams appear first</small></div>
+                <button id="favouriteTeamsToggle" class="favourite-teams-toggle" type="button" aria-expanded="false" aria-controls="favouriteTeamsDropdown">Choose teams <span aria-hidden="true">⌄</span></button>
+                <div id="favouriteTeamsDropdown" class="favourite-teams-dropdown" hidden>
+                  <label for="favouriteTeamsSearch">Find a team</label>
+                  <input id="favouriteTeamsSearch" type="search" placeholder="Search by team name..." autocomplete="off" />
+                  <div id="favouriteTeamsResults" class="favourite-teams-results" aria-live="polite">Type a team name to search.</div>
+                </div>
+                <div id="favouriteTeamsSelected" class="favourite-teams-selected" aria-live="polite"></div>
+                <div id="favouriteTeamsMessage" class="favourite-teams-message" role="status"></div>
+              </div>
               <div class="dl-schedule-filter-head">
                 <div><span>Browse by sport</span><small>Choose a category to narrow the schedule</small></div>
               </div>
@@ -461,6 +472,6 @@
   </div>
 
   <script src="./config.js?v=20260826-1217"></script>
-  <script src="./app.js?v=20260907-1"></script>
+  <script src="./app.js?v=20261022-1"></script>
 </body>
 </html>

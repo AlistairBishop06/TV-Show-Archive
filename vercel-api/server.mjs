@@ -25,6 +25,8 @@ const tmdbIdCache = new Map();
 const LIVE_SPORTS_SCHEDULE_CACHE_MS = 10 * 60 * 1000;
 const DLSTREAMS_SCHEDULE_CACHE_MS = 5 * 60 * 1000;
 let dlstreamsScheduleCache = null;
+const teamSearchCache = new Map();
+const validTeamBadge = value => /^https:\/\/(?:www\.|r2\.)?thesportsdb\.com\//i.test(value || "");
 const SKY_SPORTS_GUIDE_SIDS = new Map([
   [35, 3096],  // Sky Sports Football
   [36, 3097],  // Sky Sports+
@@ -543,6 +545,7 @@ async function ensureSchema() {
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture text NOT NULL DEFAULT ''`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS playback_source text NOT NULL DEFAULT 'vidfast'`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_switch_source boolean NOT NULL DEFAULT true`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS favourite_teams jsonb NOT NULL DEFAULT '[]'::jsonb`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -555,6 +558,7 @@ async function ensureSchema() {
 
   await sql`CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id)`;
   await sql`CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at)`;
+
 
   await sql`
     CREATE TABLE IF NOT EXISTS watch_history (
@@ -813,6 +817,56 @@ app.get("/api/dlstreams/schedule", async (_req, res) => {
     console.error("DLStreams schedule error", error);
     res.status(502).json({ error: "The live schedule could not be loaded from DLStreams right now." });
   }
+});
+
+app.get("/api/sports/teams", async (req, res) => {
+  const query = cleanText(req.query.q, 60);
+  if (query.length < 2) return res.json({ teams: [] });
+  const key = query.toLowerCase();
+  const cached = teamSearchCache.get(key);
+  if (cached && Date.now() - cached.savedAt < 60 * 60 * 1000) return res.json({ teams: cached.teams });
+  try {
+    const response = await fetch(`https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=${encodeURIComponent(query)}`, {
+      signal: AbortSignal.timeout(7000)
+    });
+    if (!response.ok) throw new Error(`Team directory returned ${response.status}`);
+    const payload = await response.json();
+    const teams = (Array.isArray(payload.teams) ? payload.teams : []).slice(0, 20).map(team => ({
+      id: String(team.idTeam || ""),
+      name: cleanText(team.strTeam, 100),
+      sport: cleanText(team.strSport, 60),
+      badge: validTeamBadge(team.strBadge) ? team.strBadge : ""
+    })).filter(team => /^\d+$/.test(team.id) && team.name);
+    teamSearchCache.set(key, { savedAt: Date.now(), teams });
+    res.json({ teams });
+  } catch (error) {
+    console.error("Team search failed", error);
+    res.status(502).json({ error: "Team search is unavailable right now." });
+  }
+});
+
+app.get("/api/account/favourite-teams", requireAuth, async (req, res, next) => {
+  try {
+    const rows = await sql`SELECT favourite_teams FROM users WHERE id = ${req.user.id}`;
+    res.json({ teams: rows[0]?.favourite_teams || [] });
+  } catch (error) { next(error); }
+});
+
+app.put("/api/account/favourite-teams", requireAuth, async (req, res, next) => {
+  try {
+    const teams = req.body?.teams;
+    if (!Array.isArray(teams) || teams.length > 30 || teams.some(team =>
+      typeof team?.id !== "string" || !/^\d{1,20}$/.test(team.id) ||
+      typeof team?.name !== "string" || !team.name.trim() || team.name.length > 100 ||
+      typeof team?.badge !== "string" || team.badge.length > 500 ||
+      (team.badge && !validTeamBadge(team.badge))
+    ) || new Set(teams.map(team => String(team.id))).size !== teams.length) {
+      return res.status(400).json({ error: "Choose up to 30 valid teams." });
+    }
+    const saved = teams.map(team => ({ id: String(team.id), name: cleanText(team.name, 100), badge: team.badge || "" }));
+    await sql`UPDATE users SET favourite_teams = ${JSON.stringify(saved)}::jsonb, updated_at = now() WHERE id = ${req.user.id}`;
+    res.json({ teams: saved });
+  } catch (error) { next(error); }
 });
 
 app.get("/api/live-sports/schedule/:streamId", async (req, res, next) => {

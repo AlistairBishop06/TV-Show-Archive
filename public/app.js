@@ -4276,6 +4276,10 @@ function usesMobileLivePlayback() {
   return mobileUserAgent || tabletLikeDevice;
 }
 
+function usesIPhoneNativeMediaViewer() {
+  return /iPhone|iPod/i.test(navigator.userAgent || "");
+}
+
 function liveStreamEmbedUrl(channelId, renewSession = false) {
   const url = new URL(`${LIVE_STREAM_BASE}${encodeURIComponent(channelId)}.php`);
   if (renewSession) url.searchParams.set("tvarchive_session", String(Date.now()));
@@ -4320,6 +4324,14 @@ function scheduleMobileLiveSessionRefresh(delay = MOBILE_LIVE_SESSION_REFRESH_MS
 function refreshMobileLiveSession(reason = "scheduled") {
   if (!mobileLiveSession || !playerScreen.classList.contains("open") ||
       !playerScreen.classList.contains("live-mode")) return;
+
+  if (usesIPhoneNativeMediaViewer() && reason !== "native-viewer-exit") {
+    // iPhone's built-in video viewer belongs to the cross-origin <video>, not
+    // the parent document. Replacing its iframe would immediately dismiss it.
+    // Mark the renewal pending and perform it after focus returns to the page.
+    mobileLiveSession.refreshPending = true;
+    return;
+  }
 
   const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
   if (fullscreenElement === playerFrame) {
@@ -6477,6 +6489,14 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("online", () => {
   if (mobileLiveSession) refreshMobileLiveSession("online");
+});
+window.addEventListener("focus", () => {
+  if (!usesIPhoneNativeMediaViewer() || !mobileLiveSession?.refreshPending) return;
+  window.setTimeout(() => {
+    if (mobileLiveSession?.refreshPending && document.hasFocus()) {
+      refreshMobileLiveSession("native-viewer-exit");
+    }
+  }, 300);
 });
 profilePlaybackSource.addEventListener("change", saveProfilePlaybackSource);
 profileSourceSwitching.addEventListener("change", saveProfileSourceSwitching);

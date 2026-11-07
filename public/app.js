@@ -423,6 +423,7 @@ playerFrameWrap?.appendChild(playerLiveRefreshStatus);
 let mobileLiveSession = null;
 let mobileLiveRefreshTimer = 0;
 let liveScreenWakeLock = null;
+let playerPseudoFullscreen = false;
 const playerTitle = el("playerTitle");
 const playerSubtitle = el("playerSubtitle");
 const playerWatchShell = el("playerWatchShell");
@@ -4320,7 +4321,16 @@ function refreshMobileLiveSession(reason = "scheduled") {
   if (!mobileLiveSession || !playerScreen.classList.contains("open") ||
       !playerScreen.classList.contains("live-mode")) return;
 
+  const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
+  if (fullscreenElement === playerFrame) {
+    // Navigating a fullscreen iframe makes mobile browsers destroy that
+    // fullscreen context. Defer until the user exits on fallback devices.
+    mobileLiveSession.refreshPending = true;
+    return;
+  }
+
   showLiveRefreshStatus();
+  mobileLiveSession.refreshPending = false;
   mobileLiveSession.lastRefreshAt = Date.now();
   mobileLiveSession.refreshCount += 1;
   playerFrame.src = liveStreamEmbedUrl(mobileLiveSession.channelId, true);
@@ -4337,7 +4347,8 @@ function startMobileLiveSession(channelId) {
   mobileLiveSession = {
     channelId: String(channelId),
     lastRefreshAt: Date.now(),
-    refreshCount: 0
+    refreshCount: 0,
+    refreshPending: false
   };
   scheduleMobileLiveSessionRefresh();
   void requestLiveScreenWakeLock();
@@ -6076,37 +6087,52 @@ function stopPlayerFrame() {
 
 function syncPlayerFullscreenButton() {
   const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
-  const active = fullscreenElement === playerFrameWrap || fullscreenElement === playerFrame;
+  const active = playerPseudoFullscreen || fullscreenElement === playerFrameWrap || fullscreenElement === playerFrame;
   playerFullscreenButton.innerHTML = active ? ICONS.fullscreenExit : ICONS.fullscreen;
   playerFullscreenButton.setAttribute("aria-label", active ? "Exit fullscreen" : "Enter fullscreen");
   playerFullscreenButton.title = active ? "Exit fullscreen" : "Fullscreen";
 }
 
+function setPlayerPseudoFullscreen(active) {
+  playerPseudoFullscreen = Boolean(active);
+  playerFrameWrap?.classList.toggle("player-pseudo-fullscreen", playerPseudoFullscreen);
+  document.documentElement.classList.toggle("player-pseudo-fullscreen-open", playerPseudoFullscreen);
+  syncPlayerFullscreenButton();
+}
+
 async function togglePlayerFullscreen() {
   if (!playerFrameWrap || !playerScreen.classList.contains("live-mode")) return;
   try {
+    if (playerPseudoFullscreen) {
+      setPlayerPseudoFullscreen(false);
+      return;
+    }
     const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
     if (fullscreenElement) {
       const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
       await exitFullscreen?.call(document);
     } else {
-      // Android browsers can fullscreen an allowed iframe directly, whereas
-      // desktop browsers are more consistent fullscreening the surrounding
-      // player. Try the platform-appropriate target, then the other option.
-      const prefersIframeFullscreen = window.matchMedia("(hover: none), (pointer: coarse)").matches;
-      const targets = prefersIframeFullscreen
-        ? [playerFrame, playerFrameWrap]
-        : [playerFrameWrap, playerFrame];
+      // Keep the stable wrapper fullscreen wherever the browser supports it.
+      // The live iframe is periodically renewed on mobile; making the iframe
+      // itself fullscreen would cause that renewal to exit fullscreen.
+      const targets = usesMobileLivePlayback() ? [playerFrameWrap] : [playerFrameWrap, playerFrame];
       let lastError = null;
       for (const target of targets) {
         const requestFullscreen = target?.requestFullscreen || target?.webkitRequestFullscreen;
         if (!requestFullscreen) continue;
         try {
           await requestFullscreen.call(target);
-          return;
+          await new Promise(resolve => window.requestAnimationFrame(resolve));
+          const activeFullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
+          if (activeFullscreenElement === target) return;
+          lastError = new Error("The browser did not enter element fullscreen mode.");
         } catch (error) {
           lastError = error;
         }
+      }
+      if (usesMobileLivePlayback()) {
+        setPlayerPseudoFullscreen(true);
+        return;
       }
       if (lastError) throw lastError;
     }
@@ -6116,6 +6142,7 @@ async function togglePlayerFullscreen() {
 }
 
 function closePlayer({ resetRoute = true } = {}) {
+  setPlayerPseudoFullscreen(false);
   const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
   if (fullscreenElement === playerFrameWrap || fullscreenElement === playerFrame) {
     const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
@@ -6427,9 +6454,20 @@ document.addEventListener("click", event => {
 
 el("closeModal").addEventListener("click", closeModal);
 el("playerBack").addEventListener("click", () => closePlayer());
+function handlePlayerFullscreenChange() {
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    setPlayerPseudoFullscreen(false);
+  }
+  syncPlayerFullscreenButton();
+  const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
+  if (!fullscreenElement && mobileLiveSession?.refreshPending) {
+    refreshMobileLiveSession("fullscreen-exit");
+  }
+}
+
 playerFullscreenButton.addEventListener("click", togglePlayerFullscreen);
-document.addEventListener("fullscreenchange", syncPlayerFullscreenButton);
-document.addEventListener("webkitfullscreenchange", syncPlayerFullscreenButton);
+document.addEventListener("fullscreenchange", handlePlayerFullscreenChange);
+document.addEventListener("webkitfullscreenchange", handlePlayerFullscreenChange);
 playerFrame.addEventListener("load", () => {
   if (!mobileLiveSession) return;
   window.setTimeout(hideLiveRefreshStatus, 450);
@@ -6739,6 +6777,10 @@ window.addEventListener("pagehide", () => {
 document.addEventListener("keydown", event => {
   if (event.key !== "Escape") return;
   closeAccountMenu();
+  if (playerPseudoFullscreen) {
+    setPlayerPseudoFullscreen(false);
+    return;
+  }
   if (playerScreen.classList.contains("open")) {
     closePlayer();
     return;

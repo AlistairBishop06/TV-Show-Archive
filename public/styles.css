@@ -7873,6 +7873,26 @@ html.player-open header {
   background: #000;
 }
 
+html.player-pseudo-fullscreen-open,
+html.player-pseudo-fullscreen-open body {
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}
+
+.player-frame-wrap.player-pseudo-fullscreen {
+  position: fixed !important;
+  z-index: 10000 !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  aspect-ratio: auto !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #000;
+}
+
 @media (max-width: 1120px) {
   .player-watch-shell { grid-template-columns: minmax(0,1fr) 380px; }
   .player-screen.movie-mode .player-watch-shell { grid-template-columns: minmax(0,1fr) 380px; }

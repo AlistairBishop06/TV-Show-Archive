@@ -171,6 +171,11 @@ const MIN_ITEMS_PER_GENRE_ROW = 5;
 const MAX_GENRE_ROWS = 12;
 const MAX_ITEMS_PER_ROW = 20;
 const LIVE_STREAM_BASE = "https://dlstreams.st/stream/stream-";
+// Mobile playback shows a repeatable provider-session boundary at roughly
+// 3.5 minutes. Renew the cross-origin player page shortly beforehand so its
+// native player receives a fresh manifest and segment authorization.
+const MOBILE_LIVE_SESSION_REFRESH_MS = 190000;
+const MOBILE_LIVE_SESSION_OVERDUE_MS = 175000;
 const LIVE_SPORTS_CHANNELS = [
   { name: "Sky Sports Football UK", id: 35, region: "United Kingdom", guideSid: 3096 },
   { name: "Sky Sports+ Plus", id: 36, region: "United Kingdom", guideSid: 3097 },
@@ -409,6 +414,15 @@ playerFullscreenButton.innerHTML = ICONS.fullscreen;
 playerFullscreenButton.setAttribute("aria-label", "Enter fullscreen");
 playerFullscreenButton.title = "Fullscreen";
 playerFrameWrap?.appendChild(playerFullscreenButton);
+const playerLiveRefreshStatus = document.createElement("div");
+playerLiveRefreshStatus.className = "player-live-refresh-status";
+playerLiveRefreshStatus.setAttribute("role", "status");
+playerLiveRefreshStatus.setAttribute("aria-live", "polite");
+playerLiveRefreshStatus.innerHTML = `<span aria-hidden="true"></span><strong>Refreshing live connection…</strong>`;
+playerFrameWrap?.appendChild(playerLiveRefreshStatus);
+let mobileLiveSession = null;
+let mobileLiveRefreshTimer = 0;
+let liveScreenWakeLock = null;
 const playerTitle = el("playerTitle");
 const playerSubtitle = el("playerSubtitle");
 const playerWatchShell = el("playerWatchShell");
@@ -4254,6 +4268,114 @@ function reloadAllLiveSports() {
   void loadAllLiveSportsSchedule({ force: true });
 }
 
+function usesMobileLivePlayback() {
+  const mobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+  const tabletLikeDevice = navigator.maxTouchPoints > 1 &&
+    Math.min(window.screen?.width || window.innerWidth, window.screen?.height || window.innerHeight) <= 1024;
+  return mobileUserAgent || tabletLikeDevice;
+}
+
+function liveStreamEmbedUrl(channelId, renewSession = false) {
+  const url = new URL(`${LIVE_STREAM_BASE}${encodeURIComponent(channelId)}.php`);
+  if (renewSession) url.searchParams.set("tvarchive_session", String(Date.now()));
+  return url.href;
+}
+
+function showLiveRefreshStatus() {
+  if (!playerLiveRefreshStatus) return;
+  playerLiveRefreshStatus.classList.add("visible");
+}
+
+function hideLiveRefreshStatus() {
+  if (!playerLiveRefreshStatus) return;
+  playerLiveRefreshStatus.classList.remove("visible");
+}
+
+async function requestLiveScreenWakeLock() {
+  if (!mobileLiveSession || document.hidden || !navigator.wakeLock?.request || liveScreenWakeLock) return;
+  try {
+    const wakeLock = await navigator.wakeLock.request("screen");
+    if (!mobileLiveSession) {
+      await wakeLock.release();
+      return;
+    }
+    liveScreenWakeLock = wakeLock;
+    wakeLock.addEventListener("release", () => {
+      if (liveScreenWakeLock === wakeLock) liveScreenWakeLock = null;
+    }, { once: true });
+  } catch (error) {
+    // Wake Lock is optional and can be denied by low-power/browser settings.
+  }
+}
+
+function scheduleMobileLiveSessionRefresh(delay = MOBILE_LIVE_SESSION_REFRESH_MS) {
+  clearTimeout(mobileLiveRefreshTimer);
+  if (!mobileLiveSession) return;
+  mobileLiveRefreshTimer = window.setTimeout(() => {
+    refreshMobileLiveSession("scheduled");
+  }, Math.max(1000, delay));
+}
+
+function refreshMobileLiveSession(reason = "scheduled") {
+  if (!mobileLiveSession || !playerScreen.classList.contains("open") ||
+      !playerScreen.classList.contains("live-mode")) return;
+
+  showLiveRefreshStatus();
+  mobileLiveSession.lastRefreshAt = Date.now();
+  mobileLiveSession.refreshCount += 1;
+  playerFrame.src = liveStreamEmbedUrl(mobileLiveSession.channelId, true);
+  scheduleMobileLiveSessionRefresh();
+
+  // The load event normally clears this. Keep a fallback so a provider-side
+  // navigation failure never leaves the reconnecting notice stuck on screen.
+  window.setTimeout(hideLiveRefreshStatus, reason === "online" ? 8000 : 6000);
+}
+
+function startMobileLiveSession(channelId) {
+  stopMobileLiveSession();
+  if (!usesMobileLivePlayback()) return;
+  mobileLiveSession = {
+    channelId: String(channelId),
+    lastRefreshAt: Date.now(),
+    refreshCount: 0
+  };
+  scheduleMobileLiveSessionRefresh();
+  void requestLiveScreenWakeLock();
+}
+
+function stopMobileLiveSession() {
+  clearTimeout(mobileLiveRefreshTimer);
+  mobileLiveRefreshTimer = 0;
+  mobileLiveSession = null;
+  hideLiveRefreshStatus();
+  if (liveScreenWakeLock) {
+    const wakeLock = liveScreenWakeLock;
+    liveScreenWakeLock = null;
+    Promise.resolve(wakeLock.release()).catch(() => {});
+  }
+}
+
+function launchLiveStreamFrame(channelId) {
+  playerFrame.setAttribute(
+    "sandbox",
+    "allow-scripts allow-same-origin allow-forms allow-presentation"
+  );
+  const mobilePlayback = usesMobileLivePlayback();
+  playerFrame.src = liveStreamEmbedUrl(channelId, mobilePlayback);
+  startMobileLiveSession(channelId);
+}
+
+function resumeMobileLiveSession() {
+  if (document.hidden || !mobileLiveSession) return;
+  void requestLiveScreenWakeLock();
+  const sessionAge = Date.now() - mobileLiveSession.lastRefreshAt;
+  if (sessionAge >= MOBILE_LIVE_SESSION_OVERDUE_MS) {
+    refreshMobileLiveSession("resume");
+  } else {
+    scheduleMobileLiveSessionRefresh(MOBILE_LIVE_SESSION_REFRESH_MS - sessionAge);
+  }
+}
+
 function openDlstreamsScheduleStream(channel) {
   if (!channel?.id || !requireSignedInForPlayback()) return;
 
@@ -4273,11 +4395,7 @@ function openDlstreamsScheduleStream(channel) {
   );
   document.title = `${title} | TV Archive`;
 
-  playerFrame.setAttribute(
-    "sandbox",
-    "allow-scripts allow-same-origin allow-forms allow-presentation"
-  );
-  playerFrame.src = `${LIVE_STREAM_BASE}${encodeURIComponent(channel.id)}.php`;
+  launchLiveStreamFrame(channel.id);
   playerScreen.classList.add("open");
   document.documentElement.classList.add("player-open");
   playerScreen.setAttribute("aria-hidden", "false");
@@ -4500,11 +4618,7 @@ function openLiveSportsChannel(channel, { replaceRoute = false } = {}) {
   // sandboxed frames and refuses playback, so those launches explicitly
   // remove this attribute in launchPlayer(). This live-stream sandbox keeps
   // scripts/video working while withholding popup/top-navigation privileges.
-  playerFrame.setAttribute(
-    "sandbox",
-    "allow-scripts allow-same-origin allow-forms allow-presentation"
-  );
-  playerFrame.src = `${LIVE_STREAM_BASE}${encodeURIComponent(channel.id)}.php`;
+  launchLiveStreamFrame(channel.id);
   playerScreen.classList.add("open");
   document.documentElement.classList.add("player-open");
   playerScreen.setAttribute("aria-hidden", "false");
@@ -4734,6 +4848,7 @@ function armPlayerLoadWatchdog(active = state.activePlayback, sourceId = active?
 function setPlayerFrameSource(url, sourceId) {
   const active = state.activePlayback;
   if (!active) return;
+  stopMobileLiveSession();
   active.attemptedSources.add(sourceId);
   active.lastProviderProgress = null;
   playerFrame.removeAttribute("sandbox");
@@ -5949,6 +6064,7 @@ async function openMovie(movie, options = {}) {
 }
 
 function stopPlayerFrame() {
+  stopMobileLiveSession();
   // Removing the iframe destroys its browsing context immediately, which is
   // more reliable than merely hiding it or assigning an empty src. Reinsert
   // the same element so it is ready for the next launch.
@@ -6314,6 +6430,16 @@ el("playerBack").addEventListener("click", () => closePlayer());
 playerFullscreenButton.addEventListener("click", togglePlayerFullscreen);
 document.addEventListener("fullscreenchange", syncPlayerFullscreenButton);
 document.addEventListener("webkitfullscreenchange", syncPlayerFullscreenButton);
+playerFrame.addEventListener("load", () => {
+  if (!mobileLiveSession) return;
+  window.setTimeout(hideLiveRefreshStatus, 450);
+});
+document.addEventListener("visibilitychange", () => {
+  resumeMobileLiveSession();
+});
+window.addEventListener("online", () => {
+  if (mobileLiveSession) refreshMobileLiveSession("online");
+});
 profilePlaybackSource.addEventListener("change", saveProfilePlaybackSource);
 profileSourceSwitching.addEventListener("change", saveProfileSourceSwitching);
 
@@ -6723,6 +6849,7 @@ async function initialiseTVArchive() {
 // When a signed-in page returns from the back/forward cache, re-fetch the
 // account history so progress made on another device can appear here.
 window.addEventListener("pageshow", () => {
+  resumeMobileLiveSession();
   if (state.user) syncWatchHistoryFromAccount({ migrateLocal: false });
   else renderContinueWatching();
 });

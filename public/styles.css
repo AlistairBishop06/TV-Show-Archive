@@ -7186,6 +7186,10 @@ html.player-open header {
   background: transparent;
 }
 
+.player-comment-field[hidden] { display: none; }
+
+.player-screen.movie-mode .player-comments { grid-template-columns: minmax(0,1fr); }
+
 .player-comment-field + .player-comment-field {
   padding-left: 32px;
   border-left: 1px solid rgba(255,255,255,.075);
@@ -7504,6 +7508,7 @@ html.player-open header {
 }
 
 .player-episode-sidebar-head label { display: grid; gap: 6px; }
+.player-episode-sidebar-head label[hidden] { display: none; }
 
 .player-episode-sidebar select {
   height: 38px;
@@ -7640,8 +7645,113 @@ html.player-open header {
   text-align: center;
 }
 
-.player-screen.movie-mode .player-watch-shell { grid-template-columns: minmax(0,1fr); }
-.player-screen.movie-mode .player-main-column { width: min(1160px,100%); margin-inline: auto; }
+.player-screen.movie-mode .player-watch-shell {
+  grid-template-columns: minmax(0,1120px) minmax(410px,470px);
+}
+.player-screen.movie-mode .player-main-column { width: auto; margin: 0; }
+
+/* Professional catalogue search --------------------------------------- */
+.search { z-index: 12; }
+
+.search-suggestions {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  left: 0;
+  z-index: 100;
+  max-height: min(68vh, 540px);
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 12px;
+  background: rgba(12,14,19,.98);
+  box-shadow: 0 24px 70px rgba(0,0,0,.58);
+  backdrop-filter: blur(20px) saturate(125%);
+}
+
+.search-suggestions[hidden] { display: none; }
+.search-suggestion-list { display: grid; gap: 2px; }
+
+.search-suggestion {
+  display: grid;
+  grid-template-columns: 42px minmax(0,1fr);
+  width: 100%;
+  align-items: center;
+  gap: 11px;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #f4f5f8;
+  cursor: pointer;
+  text-align: left;
+}
+
+.search-suggestion:hover,
+.search-suggestion:focus-visible { background: rgba(255,255,255,.07); outline: none; }
+
+.search-suggestion-art {
+  width: 42px;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border-radius: 5px;
+  background: #20232b;
+}
+
+.search-suggestion-art img { width: 100%; height: 100%; object-fit: cover; }
+.search-suggestion-copy { display: grid; min-width: 0; gap: 4px; }
+.search-suggestion-copy strong { overflow: hidden; font-size: .78rem; font-weight: 640; text-overflow: ellipsis; white-space: nowrap; }
+.search-suggestion-copy span { color: #838a96; font-size: .64rem; }
+
+.search-view-all {
+  width: 100%;
+  margin-top: 7px;
+  padding: 11px 9px 5px;
+  border: 0;
+  border-top: 1px solid rgba(255,255,255,.075);
+  background: transparent;
+  color: #e8dc56;
+  cursor: pointer;
+  font-size: .7rem;
+  font-weight: 650;
+  text-align: left;
+}
+
+.search-filters { display: flex; flex-wrap: wrap; gap: 7px; }
+
+.search-filters button {
+  min-height: 34px;
+  padding: 0 13px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 999px;
+  background: rgba(255,255,255,.035);
+  color: #9ba1ac;
+  cursor: pointer;
+  font-size: .68rem;
+  font-weight: 620;
+}
+
+.search-filters button:hover { border-color: rgba(255,255,255,.22); color: #fff; }
+.search-filters button.active { border-color: rgba(238,223,53,.32); background: rgba(238,223,53,.1); color: #e8dc56; }
+
+.search-empty-state,
+.search-loading {
+  grid-column: 1 / -1;
+  display: grid;
+  min-height: 230px;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 12px;
+  background: rgba(255,255,255,.018);
+  color: #8d949f;
+  text-align: center;
+}
+
+.search-empty-state span { color: #e6e8ed; font-size: 1rem; font-weight: 650; }
+.search-empty-state p { margin: 0; color: #747b86; font-size: .76rem; }
+.search-loading { grid-auto-flow: column; min-height: 160px; }
 
 .player-screen.live-mode .player-watch-shell {
   display: block;
@@ -7710,6 +7820,7 @@ html.player-open header {
 
 @media (max-width: 1120px) {
   .player-watch-shell { grid-template-columns: minmax(0,1fr) 380px; }
+  .player-screen.movie-mode .player-watch-shell { grid-template-columns: minmax(0,1fr) 380px; }
   .player-episode-item { grid-template-columns: 146px minmax(0,1fr); }
   .player-episode-thumb { width: 146px; }
 }

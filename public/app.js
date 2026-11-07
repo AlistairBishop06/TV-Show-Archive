@@ -136,6 +136,10 @@ let hoverTrailerTimer = 0;
 let hoverTrailerRequestId = 0;
 let playerEpisodeRequestId = 0;
 let playerCommentsRequestId = 0;
+let searchRequestId = 0;
+let searchSuggestionRequestId = 0;
+const SEARCH_RESULT_CACHE = new Map();
+const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
 // Start the lookup immediately, but keep a short guard against accidental
 // pointer passes before morphing the card into its trailer state.
 const HOVER_TRAILER_DELAY_MS = 220;
@@ -276,6 +280,7 @@ const state = {
   homeShows: [],
   homeMovies: [],
   searchResults: null,
+  searchAllResults: [],
   searchTerm: "",
   nextHomePage: 0,
   nextMovieSkip: 0,
@@ -355,6 +360,25 @@ const searchResultsSection = el("searchResultsSection");
 const searchResultsTitle = el("searchResultsTitle");
 const searchResultsCount = el("searchResultsCount");
 const searchGrid = el("searchGrid");
+const searchShell = searchInput?.closest(".search");
+const searchSuggestions = document.createElement("div");
+searchSuggestions.className = "search-suggestions";
+searchSuggestions.hidden = true;
+searchSuggestions.setAttribute("role", "listbox");
+searchSuggestions.setAttribute("aria-label", "Search suggestions");
+searchShell?.appendChild(searchSuggestions);
+searchInput?.setAttribute("aria-autocomplete", "list");
+searchInput?.setAttribute("aria-controls", "searchSuggestions");
+searchInput?.setAttribute("aria-expanded", "false");
+searchSuggestions.id = "searchSuggestions";
+const searchFilters = document.createElement("div");
+searchFilters.className = "search-filters";
+searchFilters.setAttribute("aria-label", "Filter search results");
+searchFilters.innerHTML = `
+  <button type="button" data-search-scope="all">All</button>
+  <button type="button" data-search-scope="movie">Movies</button>
+  <button type="button" data-search-scope="tv">TV shows</button>`;
+searchResultsSection?.querySelector(".section-head")?.appendChild(searchFilters);
 const collectionSection = el("collectionSection");
 const collectionBack = el("collectionBack");
 const collectionTitle = el("collectionTitle");
@@ -422,6 +446,8 @@ const playerSeriesCommentSave = el("playerSeriesCommentSave");
 const playerEpisodeComment = el("playerEpisodeComment");
 const playerEpisodeCommentStatus = el("playerEpisodeCommentStatus");
 const playerEpisodeCommentSave = el("playerEpisodeCommentSave");
+const playerSeriesCommentField = playerSeriesComment?.closest(".player-comment-field");
+const playerEpisodeCommentField = playerEpisodeComment?.closest(".player-comment-field");
 const playerSeriesCommentList = document.createElement("div");
 playerSeriesCommentList.id = "playerSeriesCommentList";
 playerSeriesCommentList.className = "community-comment-list";
@@ -435,7 +461,10 @@ playerEpisodeComment?.closest(".player-comment-field")?.appendChild(playerEpisod
 if (playerSeriesCommentSave) playerSeriesCommentSave.textContent = "Post series comment";
 if (playerEpisodeCommentSave) playerEpisodeCommentSave.textContent = "Post episode comment";
 const playerEpisodeSidebar = el("playerEpisodeSidebar");
+const playerEpisodeHeading = el("playerEpisodeHeading");
 const playerSeasonSelect = el("playerSeasonSelect");
+const playerSeasonField = playerSeasonSelect?.closest("label");
+const playerEpisodeKicker = playerEpisodeSidebar?.querySelector(".player-episode-sidebar-head > div > span");
 const playerEpisodeList = el("playerEpisodeList");
 const loadMoreButton = el("loadMoreButton");
 const catalogueActions = el("catalogueActions");
@@ -2449,6 +2478,7 @@ function normaliseMovies(movies) {
       summary: movie.description || movie.summary || "",
       year: yearMatch ? yearMatch[0] : releaseInfo,
       rating: movie.imdbRating || movie.rating || "",
+      runtime: movie.runtime || "",
       genres: Array.isArray(movie.genres) ? movie.genres : []
     });
 
@@ -3577,72 +3607,207 @@ function populateHero(media) {
   heroInfo.onclick = () => isMovie ? openMovieDetails(media) : openShow(media);
 }
 
+function normaliseSearchText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function searchRelevance(media, term) {
+  const query = normaliseSearchText(term);
+  const title = normaliseSearchText(getMediaName(media));
+  const words = query.split(/\s+/).filter(Boolean);
+  let score = 0;
+  if (title === query) score += 1000;
+  else if (title.startsWith(query)) score += 700;
+  else if (title.includes(query)) score += 450;
+  score += words.filter(word => title.split(" ").some(part => part.startsWith(word))).length * 90;
+  const metadata = normaliseSearchText([getMediaYear(media), ...(media.genres || [])].join(" "));
+  score += words.filter(word => metadata.includes(word)).length * 20;
+  score += Math.min(10, getMediaRating(media));
+  return score;
+}
+
+function rankSearchResults(items, term) {
+  const seen = new Set();
+  return items
+    .filter(media => {
+      const key = mediaKey(media);
+      if (!key || seen.has(key) || searchRelevance(media, term) <= 0) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => searchRelevance(b, term) - searchRelevance(a, term));
+}
+
+async function fetchCatalogueSearch(term) {
+  const key = normaliseSearchText(term);
+  const cached = SEARCH_RESULT_CACHE.get(key);
+  if (cached && Date.now() - cached.savedAt < SEARCH_CACHE_TTL_MS) {
+    return cached.results || cached.promise;
+  }
+
+  const promise = Promise.allSettled([
+    fetchJson(`${TVMAZE_API}/search/shows?q=${encodeURIComponent(term)}`),
+    fetchJson(`${CINEMETA_API}/catalog/movie/top/search=${encodeURIComponent(term)}.json`)
+  ]).then(([tvResult, movieResult]) => {
+    const shows = tvResult.status === "fulfilled"
+      ? normaliseShows(tvResult.value.map(result => result.show))
+      : [];
+    const movies = movieResult.status === "fulfilled"
+      ? normaliseMovies(movieResult.value?.metas || [])
+      : [];
+    const results = rankSearchResults([...shows, ...movies, ...getAllLoadedItems()], term);
+    SEARCH_RESULT_CACHE.set(key, { savedAt: Date.now(), results });
+    return results;
+  });
+  SEARCH_RESULT_CACHE.set(key, { savedAt: Date.now(), promise });
+  return promise;
+}
+
+function scopedSearchResults(results) {
+  return state.typeScope === "all"
+    ? results
+    : results.filter(media => getMediaType(media) === state.typeScope);
+}
+
+function updateSearchFilterState() {
+  searchFilters?.querySelectorAll("[data-search-scope]").forEach(button => {
+    const active = button.dataset.searchScope === state.typeScope;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+}
+
+function renderSearchResults(term, allResults) {
+  state.searchAllResults = allResults;
+  const results = scopedSearchResults(allResults);
+  state.searchResults = results;
+  updateSearchFilterState();
+  searchResultsTitle.textContent = term ? `Results for “${term}”` : "Find your next watch";
+
+  if (!term) {
+    searchResultsCount.textContent = "Search movies and TV shows by title, genre, or year.";
+    searchGrid.innerHTML = '<div class="search-empty-state"><span>Start typing above</span><p>Results from movies and television will appear here.</p></div>';
+    return;
+  }
+
+  const movieCount = results.filter(media => getMediaType(media) === "movie").length;
+  const tvCount = results.length - movieCount;
+  searchResultsCount.textContent = `${results.length} result${results.length === 1 ? "" : "s"}` +
+    (state.typeScope === "all" && results.length ? ` · ${movieCount} movies · ${tvCount} TV shows` : "");
+  if (!results.length) {
+    searchGrid.innerHTML = `<div class="search-empty-state"><span>No matches for “${escapeHtml(term)}”</span><p>Check the spelling or try a shorter title.</p></div>`;
+    return;
+  }
+  searchGrid.innerHTML = results.map(media => cardMarkup(media, "card")).join("");
+  bindCardOpeners(searchGrid, results);
+}
+
 async function searchCatalogue(query) {
   const term = query.trim();
-
   if (state.typeScope === "live") {
     showLiveSportsView(term);
     return;
   }
 
+  const requestId = ++searchRequestId;
   hideLiveSportsView();
   state.searchTerm = term;
-
-  if (!term) {
-    state.searchResults = null;
-    searchResultsSection.style.display = "none";
-    rowsContainer.style.display = "";
-    heroSection.style.display = state.heroMedia ? "block" : "none";
-    renderCatalogue();
-    return;
-  }
-
   state.activeCollection = null;
   collectionSection.style.display = "none";
   rowsContainer.style.display = "none";
   heroSection.style.display = "none";
   catalogueActions.style.display = "none";
   searchResultsSection.style.display = "block";
-  searchResultsTitle.textContent = `Searching for "${term}"…`;
-  searchResultsCount.textContent = "";
-  searchGrid.innerHTML = `<div class="status-card"><div><div class="spinner"></div>Searching…</div></div>`;
+
+  if (!term) {
+    if (APP_PAGE === "search") renderSearchResults("", []);
+    else {
+      state.searchResults = null;
+      searchResultsSection.style.display = "none";
+      rowsContainer.style.display = "";
+      heroSection.style.display = state.heroMedia ? "block" : "none";
+      renderCatalogue();
+    }
+    return;
+  }
+
+  const localResults = rankSearchResults(getAllLoadedItems(), term);
+  if (localResults.length) renderSearchResults(term, localResults);
+  else {
+    searchResultsTitle.textContent = `Searching for “${term}”…`;
+    searchResultsCount.textContent = "";
+    searchGrid.innerHTML = '<div class="search-loading"><div class="spinner"></div><span>Searching the catalogue…</span></div>';
+  }
 
   try {
-    const [tvResult, movieResult] = await Promise.allSettled([
-      fetchJson(`${TVMAZE_API}/search/shows?q=${encodeURIComponent(term)}`),
-      fetchJson(
-        `${CINEMETA_API}/catalog/movie/top/search=${encodeURIComponent(term)}.json`
-      )
-    ]);
-
-    if (searchInput.value.trim() !== term) return;
-
-    const shows = tvResult.status === "fulfilled"
-      ? normaliseShows(tvResult.value.map(result => result.show))
-      : [];
-
-    const movies = movieResult.status === "fulfilled"
-      ? normaliseMovies(movieResult.value?.metas || [])
-      : [];
-
-    const results = itemsInScope([...shows, ...movies]);
-    state.searchResults = results;
-
-    searchResultsTitle.textContent = `Search results for "${term}"`;
-
-    if (!results.length) {
-      searchResultsCount.textContent = "";
-      searchGrid.innerHTML = `<div class="status-card">No titles match "${escapeHtml(term)}".</div>`;
-      return;
-    }
-
-    searchResultsCount.textContent = `${results.length} result${results.length === 1 ? "" : "s"}`;
-    searchGrid.innerHTML = results.map(media => cardMarkup(media, "card")).join("");
-    bindCardOpeners(searchGrid, results);
+    const results = await fetchCatalogueSearch(term);
+    if (requestId !== searchRequestId || state.searchTerm !== term) return;
+    renderSearchResults(term, results);
   } catch (error) {
+    if (requestId !== searchRequestId) return;
     console.error(error);
-    searchGrid.innerHTML = `<div class="status-card">Search failed. Try again.</div>`;
+    searchGrid.innerHTML = '<div class="search-empty-state"><span>Search is temporarily unavailable</span><p>Please try again in a moment.</p></div>';
   }
+}
+
+function closeSearchSuggestions() {
+  searchSuggestions.hidden = true;
+  searchInput?.setAttribute("aria-expanded", "false");
+}
+
+function renderSearchSuggestions(term, results) {
+  const scoped = scopedSearchResults(results).slice(0, 6);
+  if (!term || !scoped.length) {
+    closeSearchSuggestions();
+    return;
+  }
+  searchSuggestions.innerHTML = `
+    <div class="search-suggestion-list">
+      ${scoped.map((media, index) => {
+        const image = getMediaPoster(media) || getMediaBackdrop(media);
+        return `<button type="button" class="search-suggestion" data-search-suggestion="${index}" role="option">
+          <span class="search-suggestion-art">${image ? `<img src="${escapeHtml(image)}" alt="" loading="lazy" />` : ""}</span>
+          <span class="search-suggestion-copy">
+            <strong>${escapeHtml(getMediaName(media))}</strong>
+            <span>${getMediaType(media) === "movie" ? "Movie" : "TV show"}${getMediaYear(media) ? ` · ${escapeHtml(getMediaYear(media))}` : ""}</span>
+          </span>
+        </button>`;
+      }).join("")}
+    </div>
+    <button type="button" class="search-view-all">View all results for “${escapeHtml(term)}”</button>`;
+  searchSuggestions.hidden = false;
+  searchInput.setAttribute("aria-expanded", "true");
+  searchSuggestions.querySelectorAll("[data-search-suggestion]").forEach(button => {
+    button.addEventListener("click", () => {
+      const media = scoped[Number(button.dataset.searchSuggestion)];
+      closeSearchSuggestions();
+      if (media) getMediaType(media) === "movie" ? openMovieDetails(media) : openShow(media);
+    });
+  });
+  searchSuggestions.querySelector(".search-view-all")?.addEventListener("click", () => {
+    const scope = ["tv", "movie"].includes(state.typeScope) ? state.typeScope : "all";
+    closeSearchSuggestions();
+    navigateToPage(`./search.html?q=${encodeURIComponent(term)}&scope=${encodeURIComponent(scope)}`);
+  });
+}
+
+async function updateSearchSuggestions(term) {
+  const requestId = ++searchSuggestionRequestId;
+  const query = term.trim();
+  if (query.length < 2 || state.typeScope === "live") {
+    closeSearchSuggestions();
+    return;
+  }
+  const local = rankSearchResults(getAllLoadedItems(), query);
+  if (local.length) renderSearchSuggestions(query, local);
+  const results = await fetchCatalogueSearch(query).catch(() => []);
+  if (requestId !== searchSuggestionRequestId || searchInput.value.trim() !== query || document.activeElement !== searchInput) return;
+  renderSearchSuggestions(query, results);
 }
 
 
@@ -4585,7 +4750,7 @@ function playerCommentMediaId(media) {
 }
 
 function commentContextLabel(comment) {
-  if (comment.scope !== "episode") return `${comment.mediaName || "Untitled"} · Series`;
+  if (comment.scope !== "episode") return comment.mediaName || "Untitled";
   const episode = `S${Number(comment.season)} E${Number(comment.episode)}`;
   return [comment.mediaName || "Untitled", episode, comment.episodeName].filter(Boolean).join(" · ");
 }
@@ -4777,6 +4942,7 @@ async function loadPlayerComments(media, season, episode) {
   const requestId = ++playerCommentsRequestId;
   const activeAtStart = state.activePlayback;
   const imdbId = playerCommentMediaId(media);
+  const movieOnly = activeAtStart?.mediaType === "movie";
   state.playerComments = { series: [], episode: [] };
   playerSeriesComment.value = "";
   playerEpisodeComment.value = "";
@@ -4789,7 +4955,9 @@ async function loadPlayerComments(media, season, episode) {
     const base = `imdbId=${encodeURIComponent(imdbId)}`;
     const [seriesData, episodeData] = await Promise.all([
       apiFetch(`/api/comments?${base}&scope=series`),
-      apiFetch(`/api/comments?${base}&scope=episode&season=${Number(season)}&episode=${Number(episode)}`)
+      movieOnly
+        ? Promise.resolve({ comments: [] })
+        : apiFetch(`/api/comments?${base}&scope=episode&season=${Number(season)}&episode=${Number(episode)}`)
     ]);
     if (requestId !== playerCommentsRequestId || state.activePlayback !== activeAtStart) return;
     state.playerComments = {
@@ -4797,7 +4965,7 @@ async function loadPlayerComments(media, season, episode) {
       episode: Array.isArray(episodeData?.comments) ? episodeData.comments : []
     };
     renderPlayerCommentList("series");
-    renderPlayerCommentList("episode");
+    if (!movieOnly) renderPlayerCommentList("episode");
   } catch (error) {
     if (requestId !== playerCommentsRequestId || state.activePlayback !== activeAtStart) return;
     const message = escapeHtml(error.message || "Comments could not be loaded right now.");
@@ -4852,9 +5020,18 @@ async function submitPlayerComment(scope) {
 }
 
 function playerDetailsMetadata(media, playbackState = {}, subtitle = "") {
-  if (playbackState.mediaType !== "tv") return subtitle;
   const year = getMediaYear(media);
   const genres = Array.isArray(media?.genres) ? media.genres.slice(0, 2).join(" / ") : "";
+  if (playbackState.mediaType !== "tv") {
+    const rating = getMediaRating(media);
+    const runtime = String(media?.runtime || "").trim();
+    const resume = Number(playbackState.startAt) >= 5
+      ? `Resuming at ${formatWatchTime(playbackState.startAt)}`
+      : "";
+    return [year, genres, rating ? `★ ${rating.toFixed(1).replace(/\.0$/, "")}` : "", runtime, resume]
+      .filter(Boolean)
+      .join(" · ") || subtitle;
+  }
   const runtime = Number(playbackState.episodeRuntime) > 0
     ? `${Number(playbackState.episodeRuntime)} min`
     : "";
@@ -4959,6 +5136,10 @@ async function preparePlayerEpisodes(show, playbackState) {
   if (!playerEpisodeSidebar || !playerSeasonSelect || !playerEpisodeList) return;
   const requestId = ++playerEpisodeRequestId;
   const activeAtStart = state.activePlayback;
+  playerEpisodeSidebar.classList.remove("movie-recommendations");
+  if (playerEpisodeKicker) playerEpisodeKicker.textContent = "Continue the series";
+  if (playerEpisodeHeading) playerEpisodeHeading.textContent = "Episodes";
+  if (playerSeasonField) playerSeasonField.hidden = false;
   playerEpisodeSidebar.hidden = false;
   playerEpisodeList.innerHTML = '<div class="player-episode-status"><div class="spinner"></div>Loading episodes…</div>';
 
@@ -4991,6 +5172,127 @@ async function preparePlayerEpisodes(show, playbackState) {
   }
 }
 
+function movieFranchiseTokens(title) {
+  const words = String(title || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(word => word && !["the", "a", "an", "and", "of", "in", "to"].includes(word));
+  const sequelMarker = words.findIndex(word => /^(?:part|chapter|episode|volume|vol|ii|iii|iv|v|vi|vii|viii|ix|x|[2-9])$/.test(word));
+  const base = sequelMarker > 0 ? words.slice(0, sequelMarker) : words;
+  return base.slice(0, base.length === 1 ? 1 : 2);
+}
+
+function isLikelyFranchiseMovie(current, candidate) {
+  if (!candidate || getImdbId(candidate) === getImdbId(current)) return false;
+  const currentTokens = movieFranchiseTokens(getMediaName(current));
+  const candidateTokens = movieFranchiseTokens(getMediaName(candidate));
+  if (!currentTokens.length || currentTokens.length !== candidateTokens.length) return false;
+  if (currentTokens.length === 1 && currentTokens[0].length < 4) return false;
+  return currentTokens.every((token, index) => token === candidateTokens[index]);
+}
+
+function uniqueMovies(items) {
+  const seen = new Set();
+  return items.filter(movie => {
+    const id = getImdbId(movie);
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+function renderPlayerMovieRecommendations(movies) {
+  playerEpisodeList.innerHTML = movies.map((movie, index) => {
+    const image = getMediaBackdrop(movie) || getMediaPoster(movie);
+    const description = getMediaSummary(movie) || "Open this film to see more details.";
+    const meta = [getMediaYear(movie), ...(movie.genres || []).slice(0, 2)].filter(Boolean).join(" · ");
+    return `
+      <button class="player-episode-item player-movie-recommendation" type="button" data-player-movie="${index}">
+        <span class="player-episode-thumb">
+          ${image
+            ? `<img src="${escapeHtml(image)}" alt="" loading="lazy" />`
+            : `<span class="player-episode-thumb-fallback">${escapeHtml(getMediaName(movie).slice(0, 1))}</span>`}
+        </span>
+        <span class="player-episode-copy">
+          <strong>${escapeHtml(getMediaName(movie))}</strong>
+          <span class="player-episode-description">${escapeHtml(description)}</span>
+          <span>${escapeHtml(meta || "Movie")}</span>
+        </span>
+      </button>`;
+  }).join("");
+
+  playerEpisodeList.querySelectorAll("[data-player-movie]").forEach(button => {
+    button.addEventListener("click", () => {
+      const movie = movies[Number(button.dataset.playerMovie)];
+      if (movie) void openMovie(movie, { replaceRoute: true });
+    });
+  });
+}
+
+async function preparePlayerMovieRecommendations(movie) {
+  if (!playerEpisodeSidebar || !playerEpisodeList) return;
+  const requestId = ++playerEpisodeRequestId;
+  const activeAtStart = state.activePlayback;
+  playerEpisodeSidebar.hidden = false;
+  playerEpisodeSidebar.classList.add("movie-recommendations");
+  if (playerSeasonField) playerSeasonField.hidden = true;
+  if (playerEpisodeKicker) playerEpisodeKicker.textContent = "Keep watching";
+  if (playerEpisodeHeading) playerEpisodeHeading.textContent = "More like this";
+  playerEpisodeList.innerHTML = '<div class="player-episode-status"><div class="spinner"></div>Finding films…</div>';
+
+  const franchiseTokens = movieFranchiseTokens(getMediaName(movie));
+  const franchiseQuery = franchiseTokens.join(" ") || getMediaName(movie);
+  const primaryGenre = Array.isArray(movie.genres) ? movie.genres[0] : "";
+  const requests = [
+    fetchJson(`${CINEMETA_API}/catalog/movie/top/search=${encodeURIComponent(franchiseQuery)}.json`)
+  ];
+  if (primaryGenre) {
+    requests.push(fetchJson(`${CINEMETA_API}/catalog/movie/top/genre=${encodeURIComponent(primaryGenre)}.json`));
+  }
+
+  const responses = await Promise.allSettled(requests);
+  if (requestId !== playerEpisodeRequestId || state.activePlayback !== activeAtStart) return;
+
+  const remoteMovies = responses.flatMap(result => result.status === "fulfilled"
+    ? normaliseMovies(result.value?.metas || [])
+    : []);
+  const localMovies = [
+    ...state.homeMovies,
+    ...(Array.isArray(state.searchAllResults) ? state.searchAllResults.filter(item => getMediaType(item) === "movie") : [])
+  ];
+  const pool = uniqueMovies([...remoteMovies, ...localMovies])
+    .filter(candidate => getImdbId(candidate) !== getImdbId(movie));
+  const franchiseMovies = pool
+    .filter(candidate => isLikelyFranchiseMovie(movie, candidate))
+    .sort((a, b) => Number(getMediaYear(a) || 9999) - Number(getMediaYear(b) || 9999));
+
+  let recommendations = franchiseMovies;
+  if (recommendations.length) {
+    if (playerEpisodeKicker) playerEpisodeKicker.textContent = "More from this collection";
+    if (playerEpisodeHeading) playerEpisodeHeading.textContent = "Related films";
+  } else {
+    const genres = new Set(movie.genres || []);
+    recommendations = pool
+      .map(candidate => ({
+        candidate,
+        score: (candidate.genres || []).filter(genre => genres.has(genre)).length * 20 + getMediaRating(candidate)
+      }))
+      .filter(item => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map(item => item.candidate);
+  }
+
+  recommendations = uniqueMovies(recommendations).slice(0, 14);
+  if (!recommendations.length) {
+    playerEpisodeList.innerHTML = '<div class="player-episode-status">No similar films were found.</div>';
+    return;
+  }
+  renderPlayerMovieRecommendations(recommendations);
+}
+
 function configurePlayerExperience(media, playbackState = {}, subtitle = "") {
   const mode = playbackState.mediaType === "tv"
     ? "tv"
@@ -5013,14 +5315,29 @@ function configurePlayerExperience(media, playbackState = {}, subtitle = "") {
   presentPlayerDescriptions(media, playbackState);
 
   if (mode === "tv") {
+    if (playerSeriesCommentField) playerSeriesCommentField.hidden = false;
+    if (playerEpisodeCommentField) playerEpisodeCommentField.hidden = false;
+    const seriesHeading = playerSeriesCommentField?.querySelector(".player-comment-heading");
+    const episodeHeading = playerEpisodeCommentField?.querySelector(".player-comment-heading");
+    if (seriesHeading) seriesHeading.innerHTML = '<span>Across every episode</span><label for="playerSeriesComment">Series comments</label>';
+    if (episodeHeading) episodeHeading.innerHTML = '<span>Only this episode</span><label for="playerEpisodeComment">Episode comments</label>';
+    playerSeriesComment.placeholder = "Write your thoughts about this series...";
+    playerSeriesCommentSave.textContent = "Post series comment";
     playerComments.hidden = false;
     loadPlayerComments(media, playbackState.season, playbackState.episode);
     playerEpisodeSidebar.hidden = false;
     void preparePlayerEpisodes(media, playbackState);
   } else {
-    playerComments.hidden = true;
-    playerEpisodeSidebar.hidden = true;
-    playerEpisodeList.innerHTML = "";
+    if (playerSeriesCommentField) playerSeriesCommentField.hidden = false;
+    if (playerEpisodeCommentField) playerEpisodeCommentField.hidden = true;
+    const movieHeading = playerSeriesCommentField?.querySelector(".player-comment-heading");
+    if (movieHeading) movieHeading.innerHTML = '<span>Discuss this film</span><label for="playerSeriesComment">Movie comments</label>';
+    playerSeriesComment.placeholder = "Write your thoughts about this movie...";
+    playerSeriesCommentSave.textContent = "Post movie comment";
+    playerComments.hidden = false;
+    loadPlayerComments(media, null, null);
+    playerEpisodeSidebar.hidden = false;
+    void preparePlayerMovieRecommendations(media);
   }
 }
 
@@ -5797,17 +6114,61 @@ playerEpisodeCommentSave.addEventListener("click", () => submitPlayerComment("ep
 searchInput.addEventListener("input", event => {
   clearTimeout(state.searchTimer);
   const value = event.target.value;
-  if (APP_PAGE !== "search" && APP_PAGE !== "live") {
+  if (APP_PAGE === "search") {
     state.searchTimer = setTimeout(() => {
       const query = value.trim();
-      if (query) {
-        const scope = ["tv", "movie"].includes(state.typeScope) ? state.typeScope : "all";
-        navigateToPage(`./search.html?q=${encodeURIComponent(query)}&scope=${encodeURIComponent(scope)}`);
-      }
-    }, 500);
+      const url = new URL(window.location.href);
+      if (query) url.searchParams.set("q", query);
+      else url.searchParams.delete("q");
+      url.searchParams.set("scope", state.typeScope);
+      history.replaceState(history.state, "", url);
+      void searchCatalogue(value);
+    }, 220);
     return;
   }
-  state.searchTimer = setTimeout(() => searchCatalogue(value), 300);
+  if (APP_PAGE === "live") {
+    state.searchTimer = setTimeout(() => searchCatalogue(value), 180);
+    return;
+  }
+  state.searchTimer = setTimeout(() => updateSearchSuggestions(value), 180);
+});
+
+searchInput.addEventListener("focus", () => {
+  if (APP_PAGE !== "search" && APP_PAGE !== "live") void updateSearchSuggestions(searchInput.value);
+});
+
+searchInput.addEventListener("keydown", event => {
+  if (event.key === "Escape") {
+    closeSearchSuggestions();
+    searchInput.blur();
+    return;
+  }
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  const query = searchInput.value.trim();
+  if (!query) return;
+  closeSearchSuggestions();
+  if (APP_PAGE === "search" || APP_PAGE === "live") {
+    void searchCatalogue(query);
+    return;
+  }
+  const scope = ["tv", "movie"].includes(state.typeScope) ? state.typeScope : "all";
+  navigateToPage(`./search.html?q=${encodeURIComponent(query)}&scope=${encodeURIComponent(scope)}`);
+});
+
+document.addEventListener("pointerdown", event => {
+  if (searchShell && !searchShell.contains(event.target)) closeSearchSuggestions();
+});
+
+searchFilters?.querySelectorAll("[data-search-scope]").forEach(button => {
+  button.addEventListener("click", () => {
+    state.typeScope = button.dataset.searchScope;
+    updateSearchFilterState();
+    const url = new URL(window.location.href);
+    url.searchParams.set("scope", state.typeScope);
+    history.replaceState(history.state, "", url);
+    renderSearchResults(state.searchTerm, state.searchAllResults);
+  });
 });
 
 loadMoreButton.addEventListener("click", loadMoreTitles);
@@ -6216,9 +6577,10 @@ async function initialiseTVArchive() {
   }
 
   if (APP_PAGE === "search") {
+    restoreCatalogueCache();
     const initialQuery = initialParams.get("q")?.trim() || "";
     searchInput.value = initialQuery;
-    if (initialQuery) await searchCatalogue(initialQuery);
+    await searchCatalogue(initialQuery);
     if (playbackRoute) await restorePlaybackRoute(playbackRoute);
     return;
   }

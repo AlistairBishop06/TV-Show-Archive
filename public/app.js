@@ -3871,12 +3871,85 @@ function normaliseDlCategory(value) {
   return text || "Other";
 }
 
+function normaliseScheduleSearch(value) {
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/\butd\b/g, "united")
+    .replace(/\bspurs\b/g, "tottenham")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function dlScheduleSearchText(event) {
-  return [
+  return normaliseScheduleSearch([
     event?.time,
     event?.event,
+    event?.scheduleGroup,
+    event?.sport?.label,
     ...(event?.channels || []).flatMap(channel => [channel?.name, channel?.id])
-  ].filter(Boolean).join(" ").toLowerCase();
+  ].filter(Boolean).join(" "));
+}
+
+function scheduleTokenDistance(left, right) {
+  if (left === right) return 0;
+  if (Math.abs(left.length - right.length) > 2) return 3;
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    const current = [row];
+    let rowMinimum = row;
+    for (let column = 1; column <= right.length; column += 1) {
+      const value = Math.min(
+        current[column - 1] + 1,
+        previous[column] + 1,
+        previous[column - 1] + (left[row - 1] === right[column - 1] ? 0 : 1)
+      );
+      current.push(value);
+      rowMinimum = Math.min(rowMinimum, value);
+    }
+    if (rowMinimum > 2) return 3;
+    previous.splice(0, previous.length, ...current);
+  }
+  return previous[right.length];
+}
+
+function dlScheduleSearchScore(event, rawQuery) {
+  const query = normaliseScheduleSearch(rawQuery);
+  if (!query) return 0;
+  const searchText = dlScheduleSearchText(event);
+  const words = [...new Set(searchText.split(" ").filter(Boolean))];
+  const tokens = [...new Set(query.split(" ").filter(Boolean))];
+  let score = searchText.includes(query) ? 240 : 0;
+
+  for (const token of tokens) {
+    if (words.includes(token)) {
+      score += 80;
+      continue;
+    }
+    if (words.some(word => word.startsWith(token) || token.startsWith(word))) {
+      score += 48;
+      continue;
+    }
+    if (token.length >= 3 && words.some(word => word.includes(token))) {
+      score += 28;
+      continue;
+    }
+    const typoAllowance = token.length >= 7 ? 2 : token.length >= 4 ? 1 : 0;
+    if (typoAllowance && words.some(word => scheduleTokenDistance(token, word) <= typoAllowance)) {
+      score += 16;
+      continue;
+    }
+    return -1;
+  }
+
+  const eventName = normaliseScheduleSearch(event?.event);
+  if (eventName === query) score += 500;
+  else if (eventName.startsWith(query)) score += 180;
+  else if (eventName.includes(query)) score += 100;
+  return score;
 }
 
 function teamBadge(team) {
@@ -3995,6 +4068,7 @@ function renderAllLiveSportsSchedule() {
 
   const allEvents = groups.flatMap(group => (group.events || []).map(event => ({
     ...event,
+    scheduleGroup: normaliseDlCategory(group.category),
     sport: inferDlSport(group, event)
   })));
 
@@ -4037,11 +4111,14 @@ function renderAllLiveSportsSchedule() {
     });
   });
 
-  const query = String(state.dlstreamsScheduleQuery || "").trim().toLowerCase();
-  const visibleEvents = allEvents.filter(event => {
-    if (activeCategory !== "all" && event.sport.key !== activeCategory) return false;
-    return !query || dlScheduleSearchText(event).includes(query);
-  });
+  const query = String(state.dlstreamsScheduleQuery || "").trim();
+  const visibleEvents = allEvents
+    .map(event => ({ ...event, searchScore: query ? dlScheduleSearchScore(event, query) : 0 }))
+    .filter(event => {
+      if (activeCategory !== "all" && event.sport.key !== activeCategory) return false;
+      return !query || event.searchScore >= 0;
+    })
+    .sort((left, right) => query ? right.searchScore - left.searchScore : 0);
 
   liveSportsAllMeta.textContent = `${data.dateLabel || "Today’s live schedule"} · ${visibleEvents.length} event${visibleEvents.length === 1 ? "" : "s"}`;
   liveSportsAllStatus.hidden = true;
@@ -6254,13 +6331,68 @@ liveScheduleTomorrow.addEventListener("click", () => {
 liveSportsFeaturedTab?.addEventListener("click", () => setLiveSportsView("featured"));
 liveSportsAllTab?.addEventListener("click", () => setLiveSportsView("all"));
 liveSportsAllReload?.addEventListener("click", reloadAllLiveSports);
+let scheduleSearchTimer = 0;
 liveSportsAllSearch?.addEventListener("input", () => {
-  state.dlstreamsScheduleQuery = liveSportsAllSearch.value;
-  renderAllLiveSportsSchedule();
+  clearTimeout(scheduleSearchTimer);
+  scheduleSearchTimer = setTimeout(() => {
+    state.dlstreamsScheduleQuery = liveSportsAllSearch.value;
+    renderAllLiveSportsSchedule();
+  }, 110);
 });
 
 let favouriteSearchTimer = 0;
 let favouriteSearchRequest = 0;
+
+function renderFavouriteTeamSearchResults(teams, query) {
+  if (!favouriteTeamsResults) return;
+  favouriteTeamsResults.removeAttribute("aria-busy");
+  if (!teams.length) {
+    favouriteTeamsResults.innerHTML = `
+      <div class="favourite-team-search-state">
+        <strong>No teams found for “${escapeHtml(query)}”</strong>
+        <span>Try a shorter name, city, nickname, or remove “FC”.</span>
+      </div>`;
+    return;
+  }
+
+  favouriteTeamsResults.innerHTML = `
+    <div class="favourite-team-results-head">
+      <strong>${teams.length} team${teams.length === 1 ? "" : "s"} found</strong>
+      <span>Best matches first</span>
+    </div>
+    <div class="favourite-team-results-list" role="listbox" aria-label="Team search results">
+      ${teams.map(team => {
+        const selected = state.favouriteTeams.some(saved => saved.id === team.id);
+        const detail = [...new Set([team.sport, team.league, team.country].filter(Boolean))].join(" · ");
+        return `
+          <button class="favourite-team-option" type="button" data-team-id="${escapeHtml(team.id)}"
+            role="option" aria-selected="${selected}" ${selected ? "disabled" : ""}>
+            ${teamBadge(team)}
+            <span><strong>${escapeHtml(team.name)}</strong><small>${escapeHtml(detail || "Sports team")}</small></span>
+            <span class="favourite-team-option-action">${selected ? "Selected" : "Add"}</span>
+          </button>`;
+      }).join("")}
+    </div>`;
+
+  favouriteTeamsResults.querySelectorAll("[data-team-id]").forEach(button => {
+    button.addEventListener("click", async () => {
+      const team = teams.find(item => item.id === button.dataset.teamId);
+      if (!team || state.favouriteTeams.some(saved => saved.id === team.id)) return;
+      button.disabled = true;
+      button.classList.add("saving");
+      button.querySelector(".favourite-team-option-action").textContent = "Adding…";
+      if (await saveFavouriteTeams([...state.favouriteTeams, team])) {
+        renderFavouriteTeamSearchResults(teams, query);
+        favouriteTeamsSearch.focus();
+      } else {
+        button.disabled = false;
+        button.classList.remove("saving");
+        button.querySelector(".favourite-team-option-action").textContent = "Add";
+      }
+    });
+  });
+}
+
 favouriteTeamsToggle?.addEventListener("click", () => {
   const opening = favouriteTeamsDropdown.hidden;
   favouriteTeamsDropdown.hidden = !opening;
@@ -6276,36 +6408,24 @@ favouriteTeamsSearch?.addEventListener("input", () => {
   const query = favouriteTeamsSearch.value.trim();
   if (query.length < 2) {
     favouriteTeamsResults.textContent = "Type at least two letters to search.";
+    favouriteTeamsResults.removeAttribute("aria-busy");
     return;
   }
-  favouriteTeamsResults.textContent = "Searching teams…";
+  favouriteTeamsResults.setAttribute("aria-busy", "true");
+  favouriteTeamsResults.innerHTML = `<div class="favourite-team-search-state loading"><span class="favourite-team-search-spinner" aria-hidden="true"></span><strong>Searching teams…</strong></div>`;
   favouriteSearchTimer = setTimeout(async () => {
     try {
       const data = await apiFetch(`/api/sports/teams?q=${encodeURIComponent(query)}`);
       if (request !== favouriteSearchRequest) return;
       const teams = data.teams || [];
-      favouriteTeamsResults.innerHTML = teams.length ? teams.map(team => `
-        <button class="favourite-team-option" type="button" data-team-id="${escapeHtml(team.id)}"
-          ${state.favouriteTeams.some(saved => saved.id === team.id) ? "disabled" : ""}>
-          ${teamBadge(team)}<span><strong>${escapeHtml(team.name)}</strong><small>${escapeHtml(team.sport)}</small></span>
-          <span>${state.favouriteTeams.some(saved => saved.id === team.id) ? "Selected" : "Add"}</span>
-        </button>`).join("") : "No teams found. Try the full team name.";
-      favouriteTeamsResults.querySelectorAll("[data-team-id]").forEach(button => {
-        button.addEventListener("click", async () => {
-          const team = teams.find(item => item.id === button.dataset.teamId);
-          if (!team) return;
-          button.disabled = true;
-          if (await saveFavouriteTeams([...state.favouriteTeams, team])) {
-            favouriteTeamsSearch.value = "";
-            favouriteTeamsResults.textContent = "Type another team name to add more.";
-            favouriteTeamsSearch.focus();
-          } else button.disabled = false;
-        });
-      });
+      renderFavouriteTeamSearchResults(teams, query);
     } catch (error) {
-      if (request === favouriteSearchRequest) favouriteTeamsResults.textContent = "Team search is unavailable right now.";
+      if (request === favouriteSearchRequest) {
+        favouriteTeamsResults.removeAttribute("aria-busy");
+        favouriteTeamsResults.innerHTML = `<div class="favourite-team-search-state"><strong>Team search is unavailable</strong><span>Please try again in a moment.</span></div>`;
+      }
     }
-  }, 350);
+  }, 220);
 });
 favouriteTeamsSelected?.addEventListener("click", async event => {
   const button = event.target.closest("[data-remove-team]");

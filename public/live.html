@@ -9,7 +9,7 @@
   <title>Live Sports | TV Archive</title>
   <link rel="icon" type="image/png" href="./assets/tv-archive-icon.png" />
   <link rel="apple-touch-icon" href="./assets/tv-archive-icon.png" />
-  <link rel="stylesheet" href="./styles.css?v=20261107-1" />
+  <link rel="stylesheet" href="./styles.css?v=20261107-2" />
 </head>
 <body data-page="live">
   <header>
@@ -258,7 +258,7 @@
               <div class="dl-schedule-control-row">
                 <label class="dl-schedule-search-wrap">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                  <input id="liveSportsAllSearch" class="dl-schedule-search" type="search" placeholder="Search teams, events or channels..." autocomplete="off" />
+                  <input id="liveSportsAllSearch" class="dl-schedule-search" type="search" placeholder="Search teams, competitions, events or channels..." autocomplete="off" />
                 </label>
                 <div class="dl-schedule-source-note"><span></span>Updated from the live schedule</div>
               </div>
@@ -267,7 +267,7 @@
                 <button id="favouriteTeamsToggle" class="favourite-teams-toggle" type="button" aria-expanded="false" aria-controls="favouriteTeamsDropdown">Choose teams <span aria-hidden="true">⌄</span></button>
                 <div id="favouriteTeamsDropdown" class="favourite-teams-dropdown" hidden>
                   <label for="favouriteTeamsSearch">Find a team</label>
-                  <input id="favouriteTeamsSearch" type="search" placeholder="Search by team name..." autocomplete="off" />
+                  <input id="favouriteTeamsSearch" type="search" placeholder="Team, city or nickname..." autocomplete="off" />
                   <div id="favouriteTeamsResults" class="favourite-teams-results" aria-live="polite">Type a team name to search.</div>
                 </div>
                 <div id="favouriteTeamsSelected" class="favourite-teams-selected" aria-live="polite"></div>
@@ -472,6 +472,6 @@
   </div>
 
   <script src="./config.js?v=20260826-1217"></script>
-  <script src="./app.js?v=20261107-1"></script>
+  <script src="./app.js?v=20261107-2"></script>
 </body>
 </html>

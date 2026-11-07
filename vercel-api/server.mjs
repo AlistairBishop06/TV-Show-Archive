@@ -819,24 +819,91 @@ app.get("/api/dlstreams/schedule", async (_req, res) => {
   }
 });
 
+function normaliseTeamSearch(value) {
+  return cleanText(value, 100)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/\butd\b/g, "united")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function teamDirectoryScore(team, query) {
+  const names = [team.strTeam, team.strTeamShort, team.strAlternate]
+    .flatMap(value => String(value || "").split(","))
+    .map(normaliseTeamSearch)
+    .filter(Boolean);
+  const searchName = names.join(" ");
+  const tokens = query.split(" ").filter(Boolean);
+  let score = 0;
+
+  for (const name of names) {
+    if (name === query) score = Math.max(score, 1000);
+    else if (name.startsWith(query)) score = Math.max(score, 700);
+    else if (name.includes(query)) score = Math.max(score, 500);
+  }
+
+  for (const token of tokens) {
+    const words = searchName.split(" ");
+    if (words.includes(token)) score += 90;
+    else if (words.some(word => word.startsWith(token))) score += 55;
+    else if (token.length >= 3 && searchName.includes(token)) score += 25;
+  }
+  return score;
+}
+
+async function searchTeamDirectory(query) {
+  const response = await fetch(`https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=${encodeURIComponent(query)}`, {
+    signal: AbortSignal.timeout(4500)
+  });
+  if (!response.ok) throw new Error(`Team directory returned ${response.status}`);
+  const payload = await response.json();
+  return Array.isArray(payload.teams) ? payload.teams : [];
+}
+
 app.get("/api/sports/teams", async (req, res) => {
   const query = cleanText(req.query.q, 60);
   if (query.length < 2) return res.json({ teams: [] });
-  const key = query.toLowerCase();
+  const key = normaliseTeamSearch(query);
+  if (key.length < 2) return res.json({ teams: [] });
   const cached = teamSearchCache.get(key);
   if (cached && Date.now() - cached.savedAt < 60 * 60 * 1000) return res.json({ teams: cached.teams });
   try {
-    const response = await fetch(`https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=${encodeURIComponent(query)}`, {
-      signal: AbortSignal.timeout(7000)
-    });
-    if (!response.ok) throw new Error(`Team directory returned ${response.status}`);
-    const payload = await response.json();
-    const teams = (Array.isArray(payload.teams) ? payload.teams : []).slice(0, 20).map(team => ({
-      id: String(team.idTeam || ""),
-      name: cleanText(team.strTeam, 100),
-      sport: cleanText(team.strSport, 60),
-      badge: validTeamBadge(team.strBadge) ? team.strBadge : ""
-    })).filter(team => /^\d+$/.test(team.id) && team.name);
+    const tokens = key.split(" ").filter(token => token.length >= 3);
+    const withoutClubSuffix = key.replace(/\b(?:fc|afc|cf|sc|club)\b/g, " ").replace(/\s+/g, " ").trim();
+    const searchQueries = [...new Map([
+      query,
+      key,
+      withoutClubSuffix !== key ? withoutClubSuffix : "",
+      ...tokens
+    ].filter(value => String(value).trim()).map(value => [String(value).trim().toLowerCase(), String(value).trim()])).values()].slice(0, 4);
+    const responses = await Promise.allSettled(searchQueries.map(searchTeamDirectory));
+    const successful = responses.filter(result => result.status === "fulfilled");
+    if (!successful.length) throw responses[0]?.reason || new Error("Team directory request failed");
+
+    const uniqueTeams = new Map();
+    successful.forEach(result => result.value.forEach(team => {
+      const id = String(team.idTeam || "");
+      if (/^\d+$/.test(id) && team.strTeam && !uniqueTeams.has(id)) uniqueTeams.set(id, team);
+    }));
+
+    const teams = [...uniqueTeams.values()]
+      .map(team => ({
+        id: String(team.idTeam || ""),
+        name: cleanText(team.strTeam, 100),
+        sport: cleanText(team.strSport, 60),
+        league: cleanText(team.strLeague, 100),
+        country: cleanText(team.strCountry, 80),
+        badge: validTeamBadge(team.strBadge) ? team.strBadge : "",
+        score: teamDirectoryScore(team, key)
+      }))
+      .filter(team => team.name && team.score > 0)
+      .sort((left, right) => right.score - left.score || left.name.localeCompare(right.name))
+      .slice(0, 30)
+      .map(({ score, ...team }) => team);
     teamSearchCache.set(key, { savedAt: Date.now(), teams });
     res.json({ teams });
   } catch (error) {

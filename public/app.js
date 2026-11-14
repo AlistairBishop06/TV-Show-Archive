@@ -170,7 +170,7 @@ const MAX_WATCH_HISTORY = 40;
 const MIN_ITEMS_PER_GENRE_ROW = 5;
 const MAX_GENRE_ROWS = 12;
 const MAX_ITEMS_PER_ROW = 20;
-const LIVE_STREAM_BASE = "https://dlstreams.st/stream/stream-";
+const LIVE_STREAM_BASE = "https://thedaddy.li/stream/stream-";
 // Mobile playback shows a repeatable provider-session boundary at roughly
 // 3.5 minutes. Renew the cross-origin player page shortly beforehand so its
 // native player receives a fresh manifest and segment authorization.
@@ -4252,7 +4252,7 @@ async function loadAllLiveSportsSchedule({ force = false } = {}) {
     state.dlstreamsScheduleCategory = "all";
     renderAllLiveSportsSchedule();
   } catch (error) {
-    console.error("DLStreams schedule failed", error);
+    console.error("DaddyLive schedule failed", error);
     if (liveSportsAllStatus) {
       liveSportsAllStatus.hidden = false;
       liveSportsAllStatus.textContent = error.message || "Could not load the live schedule.";

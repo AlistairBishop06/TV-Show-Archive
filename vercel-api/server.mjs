@@ -783,7 +783,7 @@ async function fetchDlstreamsSchedule() {
     return dlstreamsScheduleCache.data;
   }
 
-  const response = await fetch("https://dlstreams.st/", {
+  const response = await fetch("https://thedaddy.li/", {
     headers: {
       "Accept": "text/html,application/xhtml+xml",
       "Accept-Language": "en-GB,en;q=0.9",
@@ -792,7 +792,7 @@ async function fetchDlstreamsSchedule() {
     signal: AbortSignal.timeout(10000)
   });
   if (!response.ok) {
-    const error = new Error(`DLStreams schedule returned HTTP ${response.status}.`);
+    const error = new Error(`DaddyLive schedule returned HTTP ${response.status}.`);
     error.status = 502;
     throw error;
   }
@@ -800,7 +800,7 @@ async function fetchDlstreamsSchedule() {
   const html = await response.text();
   const data = parseDlstreamsSchedule(html);
   if (!data.groups.length) {
-    const error = new Error("DLStreams returned a schedule page, but no playable events could be found.");
+    const error = new Error("DaddyLive returned a schedule page, but no playable events could be found.");
     error.status = 502;
     throw error;
   }
@@ -814,8 +814,8 @@ app.get("/api/dlstreams/schedule", async (_req, res) => {
     res.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=120");
     res.json(data);
   } catch (error) {
-    console.error("DLStreams schedule error", error);
-    res.status(502).json({ error: "The live schedule could not be loaded from DLStreams right now." });
+    console.error("DaddyLive schedule error", error);
+    res.status(502).json({ error: "The live schedule could not be loaded from DaddyLive right now." });
   }
 });
 
